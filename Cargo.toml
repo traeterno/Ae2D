@@ -1,0 +1,17 @@
+[package]
+name = "ae2d-rust"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+gl = "0.14.0"
+glam = "0.29.2"
+spex = "0.2.2"
+stb_image = "0.3.0"
+sdl2 = "0.37.0"
+wrapped2d = "0.4.2"
+
+[dependencies.mlua]
+version = "0.10.3"
+features = ["lua54", "vendored"]

@@ -1,5 +1,5 @@
-# ae2d (Aeterno's 2D)
-### ae2d is a game engine which main target is to run on low-end PCs without any problems while giving decent gaming and visual experience.
+# Ae2d (Aeterno's 2D)
+### Ae2d is a game engine which main target is to run on low-end PCs without any problems while giving decent gaming and visual experience.
 
 ## Development documentation
 
