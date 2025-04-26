@@ -2,9 +2,9 @@ use std::{thread::JoinHandle, time::{Duration, Instant}};
 
 use wrapped2d::{b2, user_data::UserDataTypes};
 
-use crate::ae2d::{Assets, Window::Window};
+use crate::ae2d::{Assets, Skeleton::Skeleton, Window::Window};
 
-use super::{ContactListener::CL, DebugDraw::DebugDraw, Entity::Entity};
+use super::{ContactListener::CL, DebugDraw::DebugDraw, FrameEntity::FrameEntity};
 
 pub const m2p: f32 = 32.0;
 
@@ -19,13 +19,14 @@ impl UserDataTypes for EntData
 
 pub struct World
 {
-	ents: Vec<Entity>,
-	pub currentEnt: *mut Entity,
+	ents: Vec<FrameEntity>,
+	pub currentEnt: *mut FrameEntity,
 	pub world: b2::World<EntData>,
 	debugDraw: DebugDraw,
 	duration: Duration,
 	lastSent: Instant,
 	netHandle: Option<JoinHandle<()>>,
+	test: Skeleton
 }
 
 impl World
@@ -35,12 +36,13 @@ impl World
 		Self
 		{
 			ents: vec![],
-			currentEnt: std::ptr::null::<Entity>() as *mut _,
+			currentEnt: std::ptr::null::<FrameEntity>() as *mut _,
 			world: b2::World::new(&b2::Vec2 { x: 0.0, y: 0.0 }),
 			debugDraw: DebugDraw {},
 			duration: Duration::from_millis(10),
 			lastSent: Instant::now(),
 			netHandle: None,
+			test: Skeleton::new()
 		}
 	}
 
@@ -72,9 +74,13 @@ impl World
 			let name = element.name().local_part();
 			if name == "entity"
 			{
-				self.ents.push(Entity::parse(element));
+				self.ents.push(FrameEntity::parse(element));
 			}
 		}
+
+		self.test = Skeleton::load("res/skeletons/sorcerer.trskeleton".to_string());
+		self.test.setAnimation("idle".to_string());
+		self.test.setPosition(glam::vec2(170.0, 123.0));
 
 		self.world.set_contact_listener(Box::new(CL {}));
 	}
@@ -89,7 +95,9 @@ impl World
 	{
 		self.world.step(Window::getDeltaTime(), 12, 8);
 
-		self.currentEnt = std::ptr::null::<Entity>() as *mut _;
+		self.test.update();
+
+		self.currentEnt = std::ptr::null::<FrameEntity>() as *mut _;
 		for id in 0..self.ents.len()
 		{
 			if self.ents[id].destroyed { self.destroyEntity(id); continue; }
@@ -159,10 +167,12 @@ impl World
 			cam.draw(ent);
 		}
 
+		cam.draw(&mut self.test);
+
 		self.world.draw_debug_data(&mut self.debugDraw, b2::DrawFlags::DRAW_SHAPE);
 	}
 
-	pub fn getEntity(&mut self, name: &str) -> Option<&mut Entity>
+	pub fn getEntity(&mut self, name: &str) -> Option<&mut FrameEntity>
 	{
 		for ent in &mut self.ents
 		{

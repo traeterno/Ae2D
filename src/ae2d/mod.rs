@@ -7,4 +7,6 @@ pub mod FrameAnimation;
 pub mod Shader;
 pub mod Transformable;
 pub mod UI;
+pub mod Shapes;
+pub mod Skeleton;
 pub mod envell;

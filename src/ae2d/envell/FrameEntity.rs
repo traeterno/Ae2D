@@ -4,7 +4,7 @@ use wrapped2d::b2;
 
 use crate::ae2d::{Assets, Camera::Drawable, Programmable::{Programmable, Variable}, Transformable::Transformable2D, Window::Window};
 
-use super::{Sprite::Sprite, World};
+use super::{AnimatedSprite::AnimatedSprite, World};
 
 pub struct Physics
 {
@@ -16,9 +16,9 @@ pub struct Physics
 	pub group: i16
 }
 
-pub struct Entity
+pub struct FrameEntity
 {
-	spr: Sprite,
+	spr: AnimatedSprite,
 	name: String,
 	script: Lua,
 	pub prog: Programmable,
@@ -30,7 +30,7 @@ pub struct Entity
 	pub destroyed: bool
 }
 
-impl Entity
+impl FrameEntity
 {
 	pub fn parse(node: &Element) -> Self
 	{
@@ -104,7 +104,7 @@ impl Entity
 
 		let mut out = Self
 		{
-			spr: Sprite::new(),
+			spr: AnimatedSprite::new(),
 			name: node.att_opt("name").unwrap_or("").to_string(),
 			script: Lua::new(),
 			prog,
@@ -143,38 +143,38 @@ impl Entity
 	{
 		let table = self.script.create_table().unwrap();
 
-		table.set("getNum", self.script.create_function(Entity::getNum).unwrap());
-		table.set("getStr", self.script.create_function(Entity::getStr).unwrap());
-		table.set("setNum", self.script.create_function(Entity::setNum).unwrap());
-		table.set("setStr", self.script.create_function(Entity::setStr).unwrap());
+		table.set("getNum", self.script.create_function(FrameEntity::getNum).unwrap());
+		table.set("getStr", self.script.create_function(FrameEntity::getStr).unwrap());
+		table.set("setNum", self.script.create_function(FrameEntity::setNum).unwrap());
+		table.set("setStr", self.script.create_function(FrameEntity::setStr).unwrap());
 
-		table.set("setPosition", self.script.create_function(Entity::setPosition).unwrap());
-		table.set("getPosition", self.script.create_function(Entity::getPosition).unwrap());
+		table.set("setPosition", self.script.create_function(FrameEntity::setPosition).unwrap());
+		table.set("getPosition", self.script.create_function(FrameEntity::getPosition).unwrap());
 
-		table.set("setScale", self.script.create_function(Entity::setScale).unwrap());
-		table.set("scale", self.script.create_function(Entity::scale).unwrap());
-		table.set("getScale", self.script.create_function(Entity::getScale).unwrap());
+		table.set("setScale", self.script.create_function(FrameEntity::setScale).unwrap());
+		table.set("scale", self.script.create_function(FrameEntity::scale).unwrap());
+		table.set("getScale", self.script.create_function(FrameEntity::getScale).unwrap());
 
-		table.set("setRotation", self.script.create_function(Entity::setRotation).unwrap());
-		table.set("rotate", self.script.create_function(Entity::rotate).unwrap());
-		table.set("getRotation", self.script.create_function(Entity::getRotation).unwrap());
+		table.set("setRotation", self.script.create_function(FrameEntity::setRotation).unwrap());
+		table.set("rotate", self.script.create_function(FrameEntity::rotate).unwrap());
+		table.set("getRotation", self.script.create_function(FrameEntity::getRotation).unwrap());
 
-		table.set("setOrigin", self.script.create_function(Entity::setOrigin).unwrap());
-		table.set("getOrigin", self.script.create_function(Entity::getOrigin).unwrap());
+		table.set("setOrigin", self.script.create_function(FrameEntity::setOrigin).unwrap());
+		table.set("getOrigin", self.script.create_function(FrameEntity::getOrigin).unwrap());
 
-		table.set("size", self.script.create_function(Entity::size).unwrap());
-		table.set("bounds", self.script.create_function(Entity::bounds).unwrap());
-		table.set("setAnimation", self.script.create_function(Entity::setAnimation).unwrap());
-		table.set("name", self.script.create_function(Entity::name).unwrap());
-		table.set("destroy", self.script.create_function(Entity::destroy).unwrap());
+		table.set("size", self.script.create_function(FrameEntity::size).unwrap());
+		table.set("bounds", self.script.create_function(FrameEntity::bounds).unwrap());
+		table.set("setAnimation", self.script.create_function(FrameEntity::setAnimation).unwrap());
+		table.set("name", self.script.create_function(FrameEntity::name).unwrap());
+		table.set("destroy", self.script.create_function(FrameEntity::destroy).unwrap());
 
-		table.set("setActive", self.script.create_function(Entity::setActive).unwrap());
-		table.set("setVisible", self.script.create_function(Entity::setVisible).unwrap());
+		table.set("setActive", self.script.create_function(FrameEntity::setActive).unwrap());
+		table.set("setVisible", self.script.create_function(FrameEntity::setVisible).unwrap());
 
-		table.set("setVelocity", self.script.create_function(Entity::setVelocity).unwrap());
-		table.set("getVelocity", self.script.create_function(Entity::getVelocity).unwrap());
-		table.set("applyForce", self.script.create_function(Entity::applyForce).unwrap());
-		table.set("collisions", self.script.create_function(Entity::collisions).unwrap());
+		table.set("setVelocity", self.script.create_function(FrameEntity::setVelocity).unwrap());
+		table.set("getVelocity", self.script.create_function(FrameEntity::getVelocity).unwrap());
+		table.set("applyForce", self.script.create_function(FrameEntity::applyForce).unwrap());
+		table.set("collisions", self.script.create_function(FrameEntity::collisions).unwrap());
 
 		self.script.globals().set("entity", table);
 	}
@@ -379,4 +379,4 @@ impl Entity
 	}
 }
 
-impl Drawable for Entity { fn draw(&mut self) { if self.visible { self.spr.draw(); } } }
+impl Drawable for FrameEntity { fn draw(&mut self) { if self.visible { self.spr.draw(); } } }
