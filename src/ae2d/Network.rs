@@ -1,14 +1,16 @@
-use std::{io::{ErrorKind, Read, Write}, net::{SocketAddr, TcpStream, UdpSocket}};
+use std::{io::{Read, Write}, net::TcpStream};
+
+use mlua::{Error, Lua, Table};
 
 use super::Window::Window;
 
 pub struct Network
 {
 	tcp: Option<TcpStream>,
-	udp: Option<UdpSocket>,
-	peer: Option<SocketAddr>,
-	pub playerID: u8,
-	pub order: u32
+	name: String,
+	class: String,
+	id: u8,
+	pub order: u32,
 }
 
 impl Network
@@ -18,115 +20,106 @@ impl Network
 		Self
 		{
 			tcp: None,
-			udp: None,
-			peer: None,
-			playerID: 0,
+			name: String::new(),
+			class: String::new(),
+			id: 0,
 			order: 0
 		}
 	}
 
-	pub fn connectTCP(&mut self, addr: String) -> bool
+	pub fn initLua(script: &Lua)
 	{
-		let ip = addr.parse::<std::net::SocketAddr>();
-		if ip.is_err() { return false; }
-		let mut result = TcpStream::connect(ip.unwrap());
-		if result.is_err() { println!("Failed to connect to {addr}: {}", result.unwrap_err()); return false; }
-		result.as_mut().unwrap().set_nonblocking(true);
-		self.tcp = Some(result.unwrap());
-		self.peer = Some(self.tcp.as_ref().unwrap().peer_addr().unwrap());
-		true
+		let table = script.create_table().unwrap();
+
+		table.set("connectTCP", script.create_function(Network::connectTCP).unwrap());
+		table.set("receiveTCP", script.create_function(Network::receiveTCP).unwrap());
+		table.set("getName", script.create_function(Network::getName).unwrap());
+		table.set("setName", script.create_function(Network::setName).unwrap());
+		table.set("getID", script.create_function(Network::getID).unwrap());
+		table.set("setID", script.create_function(Network::setID).unwrap());
+		table.set("getClass", script.create_function(Network::getClass).unwrap());
+		table.set("setClass", script.create_function(Network::setClass).unwrap());
+		table.set("sendTextTCP", script.create_function(Network::sendTextTCP).unwrap());
+		
+		script.globals().set("network", table);
 	}
 
-	pub fn disconnectTCP(&mut self)
+	pub fn connectTCP(_: &Lua, addr: String) -> Result<bool, Error>
 	{
-		if self.tcp.is_none() { return; }
-		self.send(1u8, String::new());
-		self.tcp = None;
-	}
-
-	pub fn sendUDP(&mut self, req: u8, options: String)
-	{
-		if self.udp.is_none() { return; }
-		if self.peer.is_none() { return; }
-		let udp = self.udp.as_mut().unwrap();
-		udp.send(&[&[req], options.as_bytes()].concat());
-	}
-
-	pub fn sendRaw(&mut self, req: u8, data: &[u8])
-	{
-		if self.udp.is_none() { return; }
-		if self.peer.is_none() { return; }
-		let udp = self.udp.as_mut().unwrap();
-		udp.send(&[&[req], data].concat());
-	}
-
-	pub fn send(&mut self, req: u8, options: String)
-	{
-		if self.tcp.is_none() { self.sendUDP(req, options); return; }
-		let tcp = self.tcp.as_mut().unwrap();
-		let res = tcp.write(&[&[req as u8], options.as_bytes()].concat());
-		if res.is_err()
+		let net = Window::getNetwork();
+		let tcp = TcpStream::connect(addr);
+		if tcp.is_err()
 		{
-			println!("Failed to send data: {:?}", res.unwrap_err());
-			self.tcp = None;
+			println!("Failed to connect TCP: {:?}", tcp.unwrap_err());
+			return Ok(false);
 		}
+		let tcp = tcp.unwrap();
+		tcp.set_nonblocking(true);
+		net.tcp = Some(tcp);
+		Ok(true)
 	}
 
-	pub fn receiveUDP(&mut self) -> (u8, String)
+	pub fn receiveTCP(script: &Lua, _: ()) -> Result<(i32, Table), Error>
 	{
-		if self.udp.is_none() { return (1u8, String::new()); }
-		if self.peer.is_none() { return (1u8, String::new()); }
-		let udp = self.udp.as_mut().unwrap();
-		let response = &mut [0u8; 1024];
-		let res = udp.recv(response);
-		if res.is_err() { return (255u8, String::new()); }
-		let data = res.unwrap();
-		return (response[0], String::from_utf8_lossy(&response[1..data]).to_string());
-	}
+		let table = script.create_table().unwrap();
+		let tcp = &mut Window::getNetwork().tcp;
+		if tcp.is_none() { return Ok((0, table)); }
+		let tcp = tcp.as_mut().unwrap();
 
-	pub fn receiveRaw(&mut self) -> (u8, Vec<u8>)
-	{
-		if self.udp.is_none() { return (1u8, vec![]); }
-		if self.peer.is_none() { return (1u8, vec![]); }
-		let udp = self.udp.as_mut().unwrap();
-		let response = &mut [0u8; 1024];
-		let res = udp.recv(response);
-		if res.is_err() { return (255u8, vec![]); }
-		let data = res.unwrap();
-		return (
-			response[0],
-			response[1..data].to_vec()
-		);
-	}
-
-	pub fn receive(&mut self) -> (u8, String)
-	{
-		if self.tcp.is_none() { return self.receiveUDP(); }
-		let tcp = self.tcp.as_mut().unwrap();
-		let response = &mut [0u8; 1024];
-		let res = tcp.read(response);
-		if res.is_err()
+		let buffer = &mut [0u8; 1024];
+		match tcp.read(buffer)
 		{
-			let err = res.unwrap_err();
-			if err.kind() != ErrorKind::WouldBlock
+			Ok(size) =>
 			{
-				println!("Failed to receive data: {err:?}");
-				self.tcp = None;
-			}
-			return (255u8, String::new());
+				for i in 1..size
+				{
+					table.raw_push(buffer[i]);
+				}
+				Ok((buffer[0] as i32, table))
+			},
+			Err(_) => Ok((0, table))
 		}
-		let len = res.unwrap();
-		if len == 0 { self.tcp = None; return (255u8, String::new()); }
-		return (response[0], String::from_utf8_lossy(&response[1..len]).to_string());
 	}
 
-	pub fn bindUDP(&mut self)
+	pub fn sendTextTCP(_: &Lua, data: (u8, String)) -> Result<(), Error>
 	{
-		let udp = UdpSocket::bind("0.0.0.0:0").unwrap();
-		udp.connect(self.peer.as_ref().unwrap());
+		let tcp = &mut Window::getNetwork().tcp;
+		if tcp.is_none() { return Ok(()); }
+		let tcp = tcp.as_mut().unwrap();
+		let _ = tcp.write(&[&[data.0], data.1.as_bytes()].concat());
+		Ok(())
+	}
 
-		self.playerID = Window::getVariable("PlayerID".to_string()).num as u8;
+	pub fn setName(_: &Lua, name: String) -> Result<(), Error>
+	{
+		Window::getNetwork().name = name;
+		Ok(())
+	}
 
-		self.udp = Some(udp);
+	pub fn getName(_: &Lua, _: ()) -> Result<String, Error>
+	{
+		Ok(Window::getNetwork().name.clone())
+	}
+
+	pub fn setID(_: &Lua, id: i32) -> Result<(), Error>
+	{
+		Window::getNetwork().id = id as u8;
+		Ok(())
+	}
+
+	pub fn getID(_: &Lua, _: ()) -> Result<i32, Error>
+	{
+		Ok(Window::getNetwork().id as i32)
+	}
+
+	pub fn setClass(_: &Lua, class: String) -> Result<(), Error>
+	{
+		Window::getNetwork().class = class;
+		Ok(())
+	}
+
+	pub fn getClass(_: &Lua, _: ()) -> Result<String, Error>
+	{
+		Ok(Window::getNetwork().class.clone())
 	}
 }

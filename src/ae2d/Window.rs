@@ -218,7 +218,6 @@ impl Window
 		
 		i.ui.load("res/ui/mainMenu.xml".to_string());
 		i.cam.load();
-		i.cam.update();
 	}
 
 	pub fn update()
@@ -236,7 +235,7 @@ impl Window
 		{
 			match event
 			{
-				sdl2::event::Event::Quit {..} => { i.running = false; i.net.disconnectTCP(); }
+				sdl2::event::Event::Quit {..} => { i.running = false; }
 				sdl2::event::Event::KeyDown { scancode, keymod, repeat, .. } =>
 				{
 					i.keyEvent = Some(KeyEvent
@@ -372,6 +371,7 @@ impl Window
 		Window::clear();
 		
         let i = Window::getInstance();
+		i.cam.update();
 		i.world.render();
 		i.ui.render();
 		
@@ -553,27 +553,9 @@ impl Window
 
 	fn inputFN(_: &Lua, _: ()) -> Result<String, Error> { Ok(Window::getInstance().textInput.clone()) }
 
-	fn tcpConnectFN(_: &Lua, ip: String) -> Result<bool, Error> { Ok(Window::getInstance().net.connectTCP(ip)) }
-	
-	fn tcpDisconnectFN(_: &Lua, _: ()) -> Result<(), Error> { Window::getInstance().net.disconnectTCP(); Ok(()) }
-	
-	fn sendFN(_: &Lua, data: (i64, String)) -> Result<(), Error> { Window::getInstance().net.send(data.0 as u8, data.1); Ok(()) }
-
-	fn receiveFN(_: &Lua, _: ()) -> Result<(Integer, String), Error>
-	{
-		let (req, opt) = Window::getInstance().net.receive();
-		Ok((req as i64, opt))
-	}
-
 	fn getClipboardFN(_: &Lua, _: ()) -> Result<String, Error>
 	{
 		Ok(Window::getInstance().video.clipboard().clipboard_text().unwrap_or(String::new()))
-	}
-
-	fn udpBindFN(_: &Lua, _: ()) -> Result<(), Error>
-	{
-		Window::getInstance().net.bindUDP();
-		Ok(())
 	}
 
 	fn uiLoadFN(_: &Lua, path: String) -> Result<(), Error>
@@ -596,8 +578,6 @@ impl Window
 		))
 	}
 
-	fn playerIDFN(_: &Lua, _: ()) -> Result<Integer, Error> { Ok(Window::getNetwork().playerID as Integer) }
-
 	pub fn initLua(script: &Lua)
 	{
 		let table = script.create_table().unwrap();
@@ -617,17 +597,13 @@ impl Window
 		table.set("keyJustPressed", script.create_function(Window::keyJustPressedFN).unwrap());
 		table.set("execute", script.create_function(Window::executeFN).unwrap());
 		table.set("input", script.create_function(Window::inputFN).unwrap());
-		table.set("connectTCP", script.create_function(Window::tcpConnectFN).unwrap());
-		table.set("disconnectTCP", script.create_function(Window::tcpDisconnectFN).unwrap());
-		table.set("send", script.create_function(Window::sendFN).unwrap());
-		table.set("receive", script.create_function(Window::receiveFN).unwrap());
 		table.set("getClipboard", script.create_function(Window::getClipboardFN).unwrap());
-		table.set("bindUDP", script.create_function(Window::udpBindFN).unwrap());
 		table.set("loadUI", script.create_function(Window::uiLoadFN).unwrap());
 		table.set("loadWorld", script.create_function(Window::worldLoadFN).unwrap());
 		table.set("camSize", script.create_function(Window::camSizeFN).unwrap());
-		table.set("playerID", script.create_function(Window::playerIDFN).unwrap());
 
 		script.globals().set("window", table);
+
+		Network::initLua(script);
 	}
 }

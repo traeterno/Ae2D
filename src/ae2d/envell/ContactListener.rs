@@ -35,9 +35,9 @@ impl CL
 
 	fn EntityInteractable(&mut self, entity: &str, _object: &str, entFix: &str, _objFix: &str, action: bool)
 	{
-		let ent = Window::getWorld().getEntity(entity).unwrap();
-		if entFix == "bottom" { ent.physics.touchingGround = action; }
-		if entFix == "middle" { ent.physics.touchingWall = action; }
+		// let ent = Window::getWorld().getEntity(entity).unwrap();
+		// if entFix == "bottom" { ent.physics.touchingGround = action; }
+		// if entFix == "middle" { ent.physics.touchingWall = action; }
 	}
 
 	fn EntityEntity(&mut self, _ent1: &str, _ent2: &str, _ent1fix: &str, _ent2fix: &str, _action: bool)

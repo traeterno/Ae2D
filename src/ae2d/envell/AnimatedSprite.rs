@@ -1,5 +1,8 @@
+use mlua::{Error, Lua};
+
 use crate::ae2d::{Camera::Drawable, FrameAnimation::Animator, Transformable::Transformable2D, Window::Window};
 
+#[derive(Clone, Debug)]
 pub struct AnimatedSprite
 {
 	anim: Animator,
@@ -98,6 +101,89 @@ impl AnimatedSprite
 		let max = p1.max(p2).max(p3).max(p4);
 
 		sdl2::rect::FRect::new(min.x, min.y, max.x - min.x, max.y - min.y)
+	}
+
+	pub fn initLua(&mut self, script: &mut Lua)
+	{
+		let table = script.create_table().unwrap();
+
+		table.set("setAnimation", script.create_function(AnimatedSprite::setAnimFN).unwrap());
+		table.set("setPosition", script.create_function(AnimatedSprite::setPosFN).unwrap());
+		table.set("translate", script.create_function(AnimatedSprite::addPosFN).unwrap());
+		table.set("getPosition", script.create_function(AnimatedSprite::getPosFN).unwrap());
+		table.set("setRotation", script.create_function(AnimatedSprite::setRotationFN).unwrap());
+		table.set("rotate", script.create_function(AnimatedSprite::addRotationFN).unwrap());
+		table.set("getRotation", script.create_function(AnimatedSprite::getRotationFN).unwrap());
+		table.set("setScale", script.create_function(AnimatedSprite::setScaleFN).unwrap());
+		table.set("scale", script.create_function(AnimatedSprite::addScaleFN).unwrap());
+		table.set("getScale", script.create_function(AnimatedSprite::getScaleFN).unwrap());
+		table.set("setOrigin", script.create_function(AnimatedSprite::setOriginFN).unwrap());
+		table.set("getOrigin", script.create_function(AnimatedSprite::getOriginFN).unwrap());
+
+		script.globals().set("sprite", table);
+	}
+
+	pub fn setAnimFN(_: &Lua, anim: String) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().anim.setCurrentAnimation(anim); Ok(())
+	}
+
+	pub fn setPosFN(_: &Lua, pos: (f32, f32)) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().getTransform().setPosition(glam::vec2(pos.0, pos.1)); Ok(())
+	}
+
+	pub fn addPosFN(_: &Lua, pos: (f32, f32)) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().getTransform().translate(glam::vec2(pos.0, pos.1)); Ok(())
+	}
+
+	pub fn getPosFN(_: &Lua, _: ()) -> Result<(f64, f64), Error>
+	{
+		let pos = Window::getWorld().getCurrentEntity().getSprite().getTransform().getPosition();
+		Ok((pos.x as f64, pos.y as f64))
+	}
+
+	pub fn setRotationFN(_: &Lua, angle: f32) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().getTransform().setRotation(angle); Ok(())
+	}
+
+	pub fn addRotationFN(_: &Lua, angle: f32) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().getTransform().rotate(angle); Ok(())
+	}
+
+	pub fn getRotationFN(_: &Lua, _: ()) -> Result<f64, Error>
+	{
+		Ok(Window::getWorld().getCurrentEntity().getSprite().getTransform().getRotation() as f64)
+	}
+
+	pub fn setScaleFN(_: &Lua, scale: (f32, f32)) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().getTransform().setScale(glam::vec2(scale.0, scale.1)); Ok(())
+	}
+
+	pub fn addScaleFN(_: &Lua, scale: (f32, f32)) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().getTransform().scale(glam::vec2(scale.0, scale.1)); Ok(())
+	}
+
+	pub fn getScaleFN(_: &Lua, _: ()) -> Result<(f64, f64), Error>
+	{
+		let scale = Window::getWorld().getCurrentEntity().getSprite().getTransform().getScale();
+		Ok((scale.x as f64, scale.y as f64))
+	}
+
+	pub fn setOriginFN(_: &Lua, origin: (f32, f32)) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().getTransform().setOrigin(glam::vec2(origin.0, origin.1)); Ok(())
+	}
+
+	pub fn getOriginFN(_: &Lua, _: ()) -> Result<(f64, f64), Error>
+	{
+		let origin = Window::getWorld().getCurrentEntity().getSprite().getTransform().getOrigin();
+		Ok((origin.x as f64, origin.y as f64))
 	}
 }
 

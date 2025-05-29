@@ -1,12 +1,13 @@
 use sdl2::rect::FRect;
-use stb_image::image::Image;
 
+#[derive(Clone, Debug)]
 pub struct Frame
 {
 	id: u8,
 	duration: f32
 }
 
+#[derive(Clone, Debug)]
 pub struct Animation
 {
 	name: String,
@@ -89,6 +90,7 @@ impl Animation
 	pub fn getCurrentFrame(&mut self) -> u8 { self.frames[self.currentFrame].id }
 }
 
+#[derive(Clone, Debug)]
 pub struct Animator
 {
 	texture: u32,
@@ -111,52 +113,6 @@ impl Animator
 			animations: vec![],
 			currentAnimation: 0,
 			frames: vec![]
-		}
-	}
-
-	pub fn fromImage(img: Image<u8>) -> Self
-	{
-		let mut texture = 0;
-		unsafe
-		{
-			gl::GenTextures(1, &mut texture);
-			gl::BindTexture(gl::TEXTURE_2D, texture);
-
-			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
-			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
-
-			gl::TexImage2D(
-				gl::TEXTURE_2D,
-				0,
-				gl::RGBA as i32,
-				img.width as i32,
-				img.height as i32,
-				0,
-				gl::RGBA,
-				gl::UNSIGNED_BYTE,
-				img.data.as_ptr() as *const _
-			);
-			
-			gl::BindTexture(gl::TEXTURE_2D, 0);
-		}
-
-		Self
-		{
-			texture,
-			size: glam::ivec2(img.width as i32, img.height as i32),
-			frame: glam::ivec2(img.width as i32, img.height as i32),
-			animations: vec![Animation {
-				currentFrame: 0,
-				currentTime: 0.0,
-				frames: vec![Frame {duration: 0.0, id: 0}],
-				name: String::from("main"),
-				repeat: 0,
-				repeated: 0
-			}],
-			currentAnimation: 0,
-			frames: vec![FRect::new(0.0, 0.0, 1.0, 1.0)]
 		}
 	}
 
