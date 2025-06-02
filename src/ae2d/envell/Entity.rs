@@ -2,17 +2,7 @@ use mlua::{Error, Function, Lua, Value};
 
 use crate::ae2d::{Assets, Camera::Drawable, Programmable::{Programmable, Variable}, Window::Window};
 
-use super::AnimatedSprite::AnimatedSprite;
-
-#[derive(Clone, Debug)]
-struct CustomFuncs
-{
-	init: Option<Function>,
-	update: Option<Function>,
-	draw: Option<Function>,
-}
-
-impl Default for CustomFuncs { fn default() -> Self { Self { init: None, update: None, draw: None } } }
+use super::{AnimatedSprite::AnimatedSprite, World::World};
 
 #[derive(Clone, Debug)]
 pub struct Entity
@@ -25,7 +15,7 @@ pub struct Entity
 	sprite: AnimatedSprite,
 	friendly: String,
 	hostile: String,
-	cf: CustomFuncs
+	funcs: Option<(Function, Function)>
 }
 
 impl Entity
@@ -42,7 +32,7 @@ impl Entity
 			sprite: AnimatedSprite::new(),
 			friendly: String::new(),
 			hostile: String::new(),
-			cf: CustomFuncs::default()
+			funcs: None
 		}
 	}
 	pub fn load(path: String) -> Self
@@ -88,18 +78,6 @@ impl Entity
 			}
 		}
 
-		ent.sprite.initLua(&mut ent.script);
-
-		ent.cf = CustomFuncs
-		{
-			init: if let Ok(func) = ent.script.globals().get::<Function>("Init")
-				{ Some(func) } else { None },
-			update: if let Ok(func) = ent.script.globals().get::<Function>("Update")
-				{ Some(func) } else { None },
-			draw: if let Ok(func) = ent.script.globals().get::<Function>("Draw")
-				{ Some(func) } else { None }
-		};
-
 		ent
 	}
 
@@ -113,15 +91,35 @@ impl Entity
 		}
 
 		self.initLua();
-
+		self.sprite.initLua(&self.script);
 		Window::initLua(&self.script);
-		
-		if let Some(func) = &self.cf.init { func.call::<Value>(()); }
+		World::initLua(&self.script);
+
+		let update: Function;
+		let draw: Function;
+
+		match self.script.globals().get::<Function>("Init")
+		{
+			Ok(func) => { func.call::<Value>(()); }
+			Err(_) => { panic!("Entity: {}\n'Init' function not found", self.id); }
+		}
+		match self.script.globals().get::<Function>("Update")
+		{
+			Ok(f) => { update = f; }
+			Err(_) => { panic!("Entity: {}\n'Update' function not found", self.id); }
+		}
+		match self.script.globals().get::<Function>("Draw")
+		{
+			Ok(f) => { draw = f; }
+			Err(_) => { panic!("Entity: {}\n'Draw' function not found", self.id); }
+		}
+
+		self.funcs = Some((update, draw));
 	}
 
 	pub fn update(&mut self)
 	{
-		if let Some(func) = &self.cf.update { func.call::<Value>(()); }
+		self.funcs.as_mut().unwrap().0.call::<Value>(());
 	}
 
 	fn initLua(&mut self)
@@ -192,7 +190,7 @@ impl Drawable for Entity
 {
 	fn draw(&mut self)
 	{
-		if let Some(func) = &self.cf.draw { func.call::<Value>(()); }
-		else { self.sprite.draw(); }
+		Window::getWorld().setCurrentEntity(self);
+		self.funcs.as_mut().unwrap().1.call::<Value>(());
 	}
 }

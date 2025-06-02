@@ -103,11 +103,13 @@ impl AnimatedSprite
 		sdl2::rect::FRect::new(min.x, min.y, max.x - min.x, max.y - min.y)
 	}
 
-	pub fn initLua(&mut self, script: &mut Lua)
+	pub fn initLua(&mut self, script: &Lua)
 	{
 		let table = script.create_table().unwrap();
 
 		table.set("setAnimation", script.create_function(AnimatedSprite::setAnimFN).unwrap());
+		table.set("setColor", script.create_function(AnimatedSprite::setColorFN).unwrap());
+		table.set("draw", script.create_function(AnimatedSprite::drawFN).unwrap());
 		table.set("setPosition", script.create_function(AnimatedSprite::setPosFN).unwrap());
 		table.set("translate", script.create_function(AnimatedSprite::addPosFN).unwrap());
 		table.set("getPosition", script.create_function(AnimatedSprite::getPosFN).unwrap());
@@ -126,6 +128,22 @@ impl AnimatedSprite
 	pub fn setAnimFN(_: &Lua, anim: String) -> Result<(), Error>
 	{
 		Window::getWorld().getCurrentEntity().getSprite().anim.setCurrentAnimation(anim); Ok(())
+	}
+
+	pub fn setColorFN(_: &Lua, clr: (u8, u8, u8, u8)) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().color = glam::vec4(
+			clr.0 as f32 / 255.0,
+			clr.1 as f32 / 255.0,
+			clr.2 as f32 / 255.0,
+			clr.3 as f32 / 255.0
+		);
+		Ok(())
+	}
+	
+	pub fn drawFN(_: &Lua, _: ()) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite().draw(); Ok(())
 	}
 
 	pub fn setPosFN(_: &Lua, pos: (f32, f32)) -> Result<(), Error>

@@ -1,9 +1,9 @@
 use std::ptr::null;
 
-use mlua::{Function, IntoLuaMulti, Lua, StdLib, Value::{self}};
+use mlua::{Error, Function, IntoLuaMulti, Lua, StdLib, Value::{self}};
 use wrapped2d::user_data::UserDataTypes;
 
-use crate::ae2d::{Assets, Camera::Drawable, Programmable::{Programmable, Variable}};
+use crate::ae2d::{Assets, Camera::Drawable, Network::Network, Programmable::{Programmable, Variable}, Window::Window};
 
 use super::Entity::Entity;
 
@@ -23,7 +23,9 @@ pub struct World
 	ents: Vec<Entity>,
 	script: Lua,
 	currentEnt: *mut Entity,
-	updateFN: Option<Function>
+	updateFN: Option<Function>,
+	postUpdateFN: Option<Function>,
+	prog: Programmable
 }
 
 impl World
@@ -35,11 +37,27 @@ impl World
 			ents: vec![],
 			script: Lua::new(),
 			currentEnt: null::<Entity>() as *mut _,
-			updateFN: None
+			updateFN: None,
+			postUpdateFN: None,
+			prog: Programmable::new()
 		};
 
+		
 		world.script.load_std_libs(StdLib::ALL_SAFE);
+		Network::initLua(&world.script);
+		World::initLua(&world.script);
+		
 		world
+	}
+
+	pub fn initLua(script: &Lua)
+	{
+		let table = script.create_table().unwrap();
+		table.set("setNum", script.create_function(World::setNumFN).unwrap());
+		table.set("setStr", script.create_function(World::setStrFN).unwrap());
+		table.set("getNum", script.create_function(World::getNumFN).unwrap());
+		table.set("getStr", script.create_function(World::getStrFN).unwrap());
+		script.globals().set("world", table);
 	}
 
 	pub fn load(&mut self, path: String)
@@ -100,6 +118,11 @@ impl World
 		{
 			self.updateFN = Some(func);
 		}
+
+		if let Ok(func) = self.script.globals().get::<Function>("PostUpdate")
+		{
+			self.postUpdateFN = Some(func);
+		}
 	}
 
 	pub fn update(&mut self)
@@ -113,6 +136,11 @@ impl World
 		{
 			self.currentEnt = ent;
 			ent.update();
+		}
+
+		if let Some(func) = &self.postUpdateFN
+		{
+			func.call::<Value>(());
 		}
 	}
 
@@ -129,6 +157,11 @@ impl World
 		unsafe { self.currentEnt.as_mut().unwrap() }
 	}
 
+	pub fn setCurrentEntity(&mut self, ent: &mut Entity)
+	{
+		self.currentEnt = ent;
+	}
+
 	pub fn execute(&mut self, func: String, args: impl IntoLuaMulti)
 	{
 		if let Ok(f) =
@@ -136,5 +169,39 @@ impl World
 		{
 			f.call::<Value>(args);
 		}
+	}
+
+	pub fn setNumFN(_: &Lua, args: (String, f32)) -> Result<(), Error>
+	{
+		let prog = &mut Window::getWorld().prog;
+		let var = prog.get_mut(&args.0);
+		if let Some(x) = var { x.num = args.1; }
+		else { prog.insert(args.0, Variable { num: args.1, string: String::new() }); }
+		Ok(())
+	}
+
+	pub fn getNumFN(_: &Lua, args: String) -> Result<f64, Error>
+	{
+		let prog = &mut Window::getWorld().prog;
+		let var = prog.get(&args);
+		if var.is_none() { return Ok(0.0); }
+		Ok(var.unwrap().num as f64)
+	}
+
+	pub fn setStrFN(_: &Lua, args: (String, String)) -> Result<(), Error>
+	{
+		let prog = &mut Window::getWorld().prog;
+		let var = prog.get_mut(&args.0);
+		if let Some(x) = var { x.string = args.1; }
+		else { prog.insert(args.0, Variable { num: 0.0, string: args.1 }); }
+		Ok(())
+	}
+
+	pub fn getStrFN(_: &Lua, args: String) -> Result<String, Error>
+	{
+		let prog = &mut Window::getWorld().prog;
+		let var = prog.get(&args);
+		if var.is_none() { return Ok(String::new()); }
+		Ok(var.unwrap().string.clone())
 	}
 }
