@@ -103,7 +103,7 @@ impl AnimatedSprite
 		sdl2::rect::FRect::new(min.x, min.y, max.x - min.x, max.y - min.y)
 	}
 
-	pub fn initLua(&mut self, script: &Lua)
+	pub fn initLua(script: &Lua)
 	{
 		let table = script.create_table().unwrap();
 
@@ -125,82 +125,87 @@ impl AnimatedSprite
 		script.globals().set("sprite", table);
 	}
 
-	pub fn setAnimFN(_: &Lua, anim: String) -> Result<(), Error>
+	pub fn setAnimFN(_: &Lua, data: (usize, String)) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().anim.setCurrentAnimation(anim); Ok(())
+		Window::getWorld().getCurrentEntity().getSprite(data.0).anim.setCurrentAnimation(data.1); Ok(())
 	}
 
-	pub fn setColorFN(_: &Lua, clr: (u8, u8, u8, u8)) -> Result<(), Error>
+	pub fn setColorFN(_: &Lua, data: (usize, u8, u8, u8, u8)) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().color = glam::vec4(
-			clr.0 as f32 / 255.0,
-			clr.1 as f32 / 255.0,
-			clr.2 as f32 / 255.0,
-			clr.3 as f32 / 255.0
+		Window::getWorld().getCurrentEntity().getSprite(data.0).color = glam::vec4(
+			data.1 as f32 / 255.0,
+			data.2 as f32 / 255.0,
+			data.3 as f32 / 255.0,
+			data.4 as f32 / 255.0
 		);
 		Ok(())
 	}
 	
-	pub fn drawFN(_: &Lua, _: ()) -> Result<(), Error>
+	pub fn drawFN(_: &Lua, id: usize) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().draw(); Ok(())
+		Window::getWorld().getCurrentEntity().getSprite(id).draw(); Ok(())
 	}
 
-	pub fn setPosFN(_: &Lua, pos: (f32, f32)) -> Result<(), Error>
+	pub fn setPosFN(_: &Lua, data: (usize, f32, f32)) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().getTransform().setPosition(glam::vec2(pos.0, pos.1)); Ok(())
+		Window::getWorld().getCurrentEntity().getSprite(data.0).getTransform()
+			.setPosition(glam::vec2(data.1, data.2)); Ok(())
 	}
 
-	pub fn addPosFN(_: &Lua, pos: (f32, f32)) -> Result<(), Error>
+	pub fn addPosFN(_: &Lua, data: (usize, f32, f32)) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().getTransform().translate(glam::vec2(pos.0, pos.1)); Ok(())
+		Window::getWorld().getCurrentEntity().getSprite(data.0).getTransform()
+			.translate(glam::vec2(data.1, data.2)); Ok(())
 	}
 
-	pub fn getPosFN(_: &Lua, _: ()) -> Result<(f64, f64), Error>
+	pub fn getPosFN(_: &Lua, id: usize) -> Result<(f64, f64), Error>
 	{
-		let pos = Window::getWorld().getCurrentEntity().getSprite().getTransform().getPosition();
+		let pos = Window::getWorld().getCurrentEntity().getSprite(id).getTransform().getPosition();
 		Ok((pos.x as f64, pos.y as f64))
 	}
 
-	pub fn setRotationFN(_: &Lua, angle: f32) -> Result<(), Error>
+	pub fn setRotationFN(_: &Lua, data: (usize, f32)) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().getTransform().setRotation(angle); Ok(())
+		Window::getWorld().getCurrentEntity().getSprite(data.0).getTransform().setRotation(data.1); Ok(())
 	}
 
-	pub fn addRotationFN(_: &Lua, angle: f32) -> Result<(), Error>
+	pub fn addRotationFN(_: &Lua, data: (usize, f32)) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().getTransform().rotate(angle); Ok(())
+		Window::getWorld().getCurrentEntity().getSprite(data.0).getTransform().rotate(data.1); Ok(())
 	}
 
-	pub fn getRotationFN(_: &Lua, _: ()) -> Result<f64, Error>
+	pub fn getRotationFN(_: &Lua, id: usize) -> Result<f64, Error>
 	{
-		Ok(Window::getWorld().getCurrentEntity().getSprite().getTransform().getRotation() as f64)
+		Ok(Window::getWorld().getCurrentEntity().getSprite(id).getTransform().getRotation() as f64)
 	}
 
-	pub fn setScaleFN(_: &Lua, scale: (f32, f32)) -> Result<(), Error>
+	pub fn setScaleFN(_: &Lua, data: (usize, f32, f32)) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().getTransform().setScale(glam::vec2(scale.0, scale.1)); Ok(())
+		Window::getWorld().getCurrentEntity().getSprite(data.0).getTransform()
+			.setScale(glam::vec2(data.1, data.2)); Ok(())
 	}
 
-	pub fn addScaleFN(_: &Lua, scale: (f32, f32)) -> Result<(), Error>
+	pub fn addScaleFN(_: &Lua, data: (usize, f32, f32)) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().getTransform().scale(glam::vec2(scale.0, scale.1)); Ok(())
+		Window::getWorld().getCurrentEntity().getSprite(data.0).getTransform()
+			.scale(glam::vec2(data.1, data.2)); Ok(())
 	}
 
-	pub fn getScaleFN(_: &Lua, _: ()) -> Result<(f64, f64), Error>
+	pub fn getScaleFN(_: &Lua, id: usize) -> Result<(f64, f64), Error>
 	{
-		let scale = Window::getWorld().getCurrentEntity().getSprite().getTransform().getScale();
+		let scale = Window::getWorld().getCurrentEntity().getSprite(id).getTransform().getScale();
 		Ok((scale.x as f64, scale.y as f64))
 	}
 
-	pub fn setOriginFN(_: &Lua, origin: (f32, f32)) -> Result<(), Error>
+	pub fn setOriginFN(_: &Lua, data: (usize, f32, f32)) -> Result<(), Error>
 	{
-		Window::getWorld().getCurrentEntity().getSprite().getTransform().setOrigin(glam::vec2(origin.0, origin.1)); Ok(())
+		Window::getWorld().getCurrentEntity().getSprite(data.0).getTransform()
+			.setOrigin(glam::vec2(data.1, data.2)); Ok(())
 	}
 
-	pub fn getOriginFN(_: &Lua, _: ()) -> Result<(f64, f64), Error>
+	pub fn getOriginFN(_: &Lua, id: usize) -> Result<(f64, f64), Error>
 	{
-		let origin = Window::getWorld().getCurrentEntity().getSprite().getTransform().getOrigin();
+		let origin = Window::getWorld().getCurrentEntity().getSprite(id).getTransform().getOrigin();
 		Ok((origin.x as f64, origin.y as f64))
 	}
 }

@@ -12,7 +12,7 @@ pub struct Entity
 	prog: Programmable,
 	group: String,
 	script: Lua,
-	sprite: AnimatedSprite,
+	drawable: Vec<AnimatedSprite>,
 	friendly: String,
 	hostile: String,
 	funcs: Option<(Function, Function)>
@@ -29,7 +29,7 @@ impl Entity
 			prog: Programmable::new(),
 			group: String::new(),
 			script: Lua::new(),
-			sprite: AnimatedSprite::new(),
+			drawable: vec![],
 			friendly: String::new(),
 			hostile: String::new(),
 			funcs: None
@@ -62,12 +62,6 @@ impl Entity
 					).unwrap_or(String::new()).to_string()
 				).exec();
 			}
-			if name == "animation"
-			{
-				ent.sprite.loadAnimator(
-					element.text().unwrap_or("").to_string()
-				);
-			}
 			if name == "friendly"
 			{
 				ent.friendly = element.text().unwrap_or("").to_string();
@@ -91,7 +85,7 @@ impl Entity
 		}
 
 		self.initLua();
-		self.sprite.initLua(&self.script);
+		AnimatedSprite::initLua(&self.script);
 		Window::initLua(&self.script);
 		World::initLua(&self.script);
 
@@ -130,8 +124,10 @@ impl Entity
 		table.set("getStr", self.script.create_function(Entity::getStrFN).unwrap());
 		table.set("setNum", self.script.create_function(Entity::setNumFN).unwrap());
 		table.set("setStr", self.script.create_function(Entity::setStrFN).unwrap());
-		table.set("name", self.script.create_function(Entity::nameFN).unwrap());
+		table.set("getName", self.script.create_function(Entity::getNameFN).unwrap());
+		table.set("setName", self.script.create_function(Entity::setNameFN).unwrap());
 		table.set("id", self.script.create_function(Entity::idFN).unwrap());
+		table.set("createSprite", self.script.create_function(Entity::createSprite).unwrap());
 
 		self.script.globals().set("entity", table);
 	}
@@ -170,9 +166,15 @@ impl Entity
 		Ok(var.unwrap().string.clone())
 	}
 
-	pub fn nameFN(_: &Lua, _: ()) -> Result<String, Error>
+	pub fn setNameFN(_: &Lua, name: String) -> Result<(), Error>
 	{
-		Ok(Window::getWorld().getCurrentEntity().getName().to_string())
+		Window::getWorld().getCurrentEntity().name = name;
+		Ok(())
+	}
+
+	pub fn getNameFN(_: &Lua, _: ()) -> Result<String, Error>
+	{
+		Ok(Window::getWorld().getCurrentEntity().name.clone())
 	}
 
 	pub fn idFN(_: &Lua, _: ()) -> Result<String, Error>
@@ -180,9 +182,21 @@ impl Entity
 		Ok(Window::getWorld().getCurrentEntity().getID().to_string())
 	}
 
-	pub fn getName(&mut self) -> &String { &self.name }
+	pub fn createSprite(_: &Lua, path: String) -> Result<i32, Error>
+	{
+		let ent = Window::getWorld().getCurrentEntity();
+		let mut spr = AnimatedSprite::new();
+		spr.loadAnimator(path);
+		ent.drawable.push(spr);
+		Ok((ent.drawable.len() - 1) as i32)
+	}
+
+	pub fn getSprite(&mut self, id: usize) -> &mut AnimatedSprite
+	{
+		self.drawable.get_mut(id).unwrap()
+	}
+	
 	pub fn getID(&mut self) -> &String { &self.id }
-	pub fn getSprite(&mut self) -> &mut AnimatedSprite { &mut self.sprite }
 	pub fn getProgrammable(&mut self) -> &mut Programmable { &mut self.prog }
 }
 

@@ -121,26 +121,25 @@ impl Network
 		let udp = udp.as_mut().unwrap();
 
 		let buffer = &mut [0u8; 1024];
-		match udp.recv(buffer)
+		let mut result = udp.recv(buffer);
+		let mut size = 0;
+		while !result.is_err()
 		{
-			Ok(size) =>
-			{
-				for i in 0..size
-				{
-					table.raw_push(buffer[i]);
-				}
-				Ok(table)
-			},
-			Err(x) =>
-			{
-				match x.kind()
-				{
-					ErrorKind::WouldBlock => {},
-					_ => println!("UDP: {x:?}")
-				}
-				Ok(table)
-			}
+			size = result.unwrap();
+			result = udp.recv(buffer);
 		}
+		let err = result.unwrap_err();
+		match err.kind()
+		{
+			ErrorKind::WouldBlock => {},
+			_ => println!("UDP: {:?}", err)
+		}
+
+		for i in 0..size
+		{
+			table.raw_push(buffer[i]);
+		}
+		Ok(table)
 	}
 
 	pub fn sendStateUDP(_: &Lua, data: (i8, bool, bool, bool, f32, f32)) -> Result<(), Error>
