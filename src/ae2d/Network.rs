@@ -104,7 +104,19 @@ impl Network
 				}
 				Ok((buffer[0] as i32, table))
 			},
-			Err(_) => Ok((0, table))
+			Err(x) =>
+			{
+				match x.kind()
+				{
+					ErrorKind::WouldBlock => {},
+					ErrorKind::ConnectionRefused =>
+					{
+						Window::getNetwork().tcp = None;
+					}
+					_ => {}
+				}
+				Ok((0, table))
+			}
 		}
 	}
 
@@ -113,11 +125,7 @@ impl Network
 		let table = script.create_table().unwrap();
 
 		let udp = &mut Window::getNetwork().udp;
-		if udp.is_none()
-		{
-			println!("UDP is not initialized");
-			return Ok(table);
-		}
+		if udp.is_none() { return Ok(table); }
 		let udp = udp.as_mut().unwrap();
 
 		let buffer = &mut [0u8; 1024];
@@ -132,6 +140,10 @@ impl Network
 		match err.kind()
 		{
 			ErrorKind::WouldBlock => {},
+			ErrorKind::ConnectionRefused =>
+			{
+				Window::getNetwork().udp = None;
+			},
 			_ => println!("UDP: {:?}", err)
 		}
 
@@ -144,6 +156,8 @@ impl Network
 
 	pub fn sendStateUDP(_: &Lua, data: (i8, bool, bool, bool, f32, f32)) -> Result<(), Error>
 	{
+		let net = Window::getNetwork();
+		if net.udp.is_none() { return Ok(()); }
 		let id = Window::getNetwork().id;
 		let velX = data.0;
 		let jump = data.1;
@@ -156,7 +170,6 @@ impl Network
 		if attack { state = state | 0b10_00_00_00; }
 		if protect { state = state | 0b01_00_00_00; }
 
-		let net = Window::getNetwork();
 		let udp = net.udp.as_mut().unwrap();
 		let posX = &data.4.to_le_bytes() as &[u8];
 		let posY = &data.5.to_le_bytes() as &[u8];
