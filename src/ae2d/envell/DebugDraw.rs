@@ -10,6 +10,7 @@ impl Draw for DebugDraw
 {
 	fn draw_polygon(&mut self, vertices: &[wrapped2d::b2::Vec2], color: &wrapped2d::b2::Color)
 	{
+
 		let shader = Window::getCamera().getShapeShader();
 		let clr = glam::vec4(color.r, color.g, color.b, 0.1);
 		let mut vao = 0;

@@ -1,11 +1,11 @@
 use std::ptr::null;
 
 use mlua::{Error, Function, IntoLuaMulti, Lua, StdLib, Value::{self}};
-use wrapped2d::user_data::UserDataTypes;
+use wrapped2d::{b2, user_data::UserDataTypes};
 
 use crate::ae2d::{Assets, Camera::Drawable, Network::Network, Programmable::{Programmable, Variable}, Window::Window};
 
-use super::Entity::Entity;
+use super::{DebugDraw::DebugDraw, Entity::Entity};
 
 pub const m2p: f32 = 64.0;
 
@@ -25,7 +25,9 @@ pub struct World
 	currentEnt: *mut Entity,
 	updateFN: Option<Function>,
 	postUpdateFN: Option<Function>,
-	prog: Programmable
+	prog: Programmable,
+	b2d: b2::World<EntData>,
+	debugDraw: DebugDraw
 }
 
 impl World
@@ -39,9 +41,10 @@ impl World
 			currentEnt: null::<Entity>() as *mut _,
 			updateFN: None,
 			postUpdateFN: None,
-			prog: Programmable::new()
+			prog: Programmable::new(),
+			b2d: b2::World::new(&b2::Vec2 { x: 0.0, y: 0.0 }),
+			debugDraw: DebugDraw {}
 		};
-
 		
 		world.script.load_std_libs(StdLib::ALL_SAFE);
 		Network::initLua(&world.script);
@@ -57,6 +60,7 @@ impl World
 		table.set("setStr", script.create_function(World::setStrFN).unwrap());
 		table.set("getNum", script.create_function(World::getNumFN).unwrap());
 		table.set("getStr", script.create_function(World::getStrFN).unwrap());
+		table.set("setGravity", script.create_function(World::setGravityFN).unwrap());
 		script.globals().set("world", table);
 	}
 
@@ -127,6 +131,7 @@ impl World
 
 	pub fn update(&mut self)
 	{
+		self.b2d.step(Window::getDeltaTime(), 12, 8);
 		if let Some(func) = &self.updateFN
 		{
 			func.call::<Value>(());
@@ -146,10 +151,15 @@ impl World
 
 	pub fn render(&mut self)
 	{
+		// let cam = Window::getCamera();
+		// cam.toggleCameraTransform(true);
+
 		for ent in &mut self.ents
 		{
 			ent.draw();
 		}
+
+		self.b2d.draw_debug_data(&mut self.debugDraw, b2::DrawFlags::DRAW_SHAPE);
 	}
 
 	pub fn getCurrentEntity(&mut self) -> &mut Entity
@@ -170,6 +180,8 @@ impl World
 			f.call::<Value>(args);
 		}
 	}
+
+	pub fn getB2D(&mut self) -> &mut b2::World<EntData> { &mut self.b2d }
 
 	pub fn setNumFN(_: &Lua, args: (String, f32)) -> Result<(), Error>
 	{
@@ -203,5 +215,11 @@ impl World
 		let var = prog.get(&args);
 		if var.is_none() { return Ok(String::new()); }
 		Ok(var.unwrap().string.clone())
+	}
+
+	pub fn setGravityFN(_: &Lua, g: (f32, f32)) -> Result<(), Error>
+	{
+		Window::getWorld().b2d.set_gravity(&b2::Vec2 { x: g.0, y: g.1 });
+		Ok(())
 	}
 }
