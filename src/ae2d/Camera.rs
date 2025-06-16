@@ -5,11 +5,6 @@ pub trait Drawable
 	fn draw(&mut self);
 }
 
-/*
-	TODO
-	Implement 'drawable' trait on all the UI and sprites;
-	after that add the Camera::draw() function to make layer constant
-*/
 pub struct Camera
 {
 	pos: glam::Vec2,

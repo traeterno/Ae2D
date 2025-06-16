@@ -1,8 +1,71 @@
-use std::{io::{ErrorKind, Read, Write}, net::{TcpStream, UdpSocket}};
+use std::{io::{ErrorKind, Read, Write}, net::{TcpStream, UdpSocket}, time::{Duration, Instant}};
 
-use mlua::{Error, Lua, Table};
+use mlua::{Error, Integer, Lua, Number, Table, Value};
+
+use crate::ae2d::Programmable::Variable;
 
 use super::Window::Window;
+
+#[derive(Clone, Copy, Debug)]
+struct State
+{
+	pos: (f32, f32),
+	vel: (f32, f32),
+	moveX: i8,
+	jump: bool,
+	attack: bool,
+	protect: bool
+}
+
+impl State
+{
+	fn default() -> Self
+	{
+		Self { pos: (0.0, 0.0), vel: (0.0, 0.0), moveX: 0, jump: false, attack: false, protect: false }
+	}
+	fn parse(data: &[u8]) -> (u8, Self)
+	{
+		let state = data[0];
+		let id = state & 0b00_00_01_11;
+		let moveX: i8;
+		if (state & 0b00_10_00_00) != 0 { moveX = -1; }
+		else if (state & 0b00_01_00_00) != 0 { moveX = 1; }
+		else { moveX = 0; }
+		let jump = (state & 0b00_00_10_00) != 0;
+		let attack = (state & 0b10_00_00_00) != 0;
+		let protect = (state & 0b01_00_00_00) != 0;
+		let px = u16::from_le_bytes([data[1], data[2]]);
+		let py = u16::from_le_bytes([data[3], data[4]]);
+		let vx = u16::from_le_bytes([data[5], data[6]]);
+		let vy = u16::from_le_bytes([data[7], data[8]]);
+
+		return (
+			id,
+			Self
+			{
+				pos: (px as f32, py as f32),
+				vel: (vx as f32, vy as f32),
+				moveX, jump, attack, protect
+			}
+		);
+	}
+	fn raw(&self, id: u8) -> Vec<u8>
+	{
+		let mut state = id;
+		if self.moveX == -1 { state = state | 0b00_10_00_00; }
+		if self.moveX == 1 { state = state | 0b00_01_00_00; }
+		if self.jump { state = state | 0b00_00_10_00; }
+		if self.attack { state = state | 0b10_00_00_00; }
+		if self.protect { state = state | 0b01_00_00_00; }
+		[
+			&[state],
+			&(self.pos.0.round() as u16).to_le_bytes() as &[u8],
+			&(self.pos.1.round() as u16).to_le_bytes() as &[u8],
+			&(self.vel.0.round() as u16).to_le_bytes() as &[u8],
+			&(self.vel.1.round() as u16).to_le_bytes() as &[u8]
+		].concat().to_vec()
+	}
+}
 
 pub struct Network
 {
@@ -11,7 +74,10 @@ pub struct Network
 	name: String,
 	class: String,
 	id: u8,
-	pub order: u32,
+	tickRate: u8,
+	tickTime: Duration,
+	mainState: State,
+	state: [State; 4]
 }
 
 impl Network
@@ -25,7 +91,10 @@ impl Network
 			name: String::new(),
 			class: String::new(),
 			id: 0,
-			order: 0,
+			tickRate: 1,
+			tickTime: Duration::from_secs(1),
+			mainState: State::default(),
+			state: [State::default(); 4]
 		}
 	}
 
@@ -34,20 +103,17 @@ impl Network
 		let table = script.create_table().unwrap();
 
 		table.set("connectTCP", script.create_function(Network::connectTCP).unwrap());
-		table.set("connectUDP", script.create_function(Network::connectUDP).unwrap());
 		table.set("receiveTCP", script.create_function(Network::receiveTCP).unwrap());
-		table.set("receiveUDP", script.create_function(Network::receiveUDP).unwrap());
-		table.set("getName", script.create_function(Network::getName).unwrap());
-		table.set("setName", script.create_function(Network::setName).unwrap());
-		table.set("getID", script.create_function(Network::getID).unwrap());
-		table.set("setID", script.create_function(Network::setID).unwrap());
-		table.set("getClass", script.create_function(Network::getClass).unwrap());
-		table.set("setClass", script.create_function(Network::setClass).unwrap());
+		table.set("name", script.create_function(Network::name).unwrap());
+		table.set("id", script.create_function(Network::id).unwrap());
+		table.set("class", script.create_function(Network::class).unwrap());
 		table.set("sendTextTCP", script.create_function(Network::sendTextTCP).unwrap());
-		table.set("sendStateUDP", script.create_function(Network::sendStateUDP).unwrap());
 		table.set("parseID", script.create_function(Network::parseID).unwrap());
-		table.set("bytesToNum", script.create_function(Network::bytesToNum).unwrap());
+		table.set("bytesToU16", script.create_function(Network::bytesToU16).unwrap());
 		table.set("parseState", script.create_function(Network::parseState).unwrap());
+		table.set("login", script.create_function(Network::login).unwrap());
+		table.set("setState", script.create_function(Network::setState).unwrap());
+		table.set("getState", script.create_function(Network::getState).unwrap());
 
 		script.globals().set("network", table);
 	}
@@ -76,14 +142,6 @@ impl Network
 		net.tcp = Some(tcp);
 		net.udp = Some(udp);
 		Ok(true)
-	}
-
-	pub fn connectUDP(_: &Lua, port: (u8, u8)) -> Result<(), Error>
-	{
-		let ip = Window::getNetwork().tcp.as_mut().unwrap().peer_addr().unwrap().ip();
-		let addr = ip.to_string() + ":" + &u16::from_le_bytes([port.0, port.1]).to_string();
-		Window::getNetwork().udp.as_mut().unwrap().connect(addr);
-		Ok(())
 	}
 
 	pub fn receiveTCP(script: &Lua, _: ()) -> Result<(i32, Table), Error>
@@ -120,60 +178,15 @@ impl Network
 		}
 	}
 
-	pub fn receiveUDP(script: &Lua, _: ()) -> Result<Table, Error>
+	pub fn setState(_: &Lua, data: (Number, Number, Number, Number, Table)) -> Result<(), Error>
 	{
-		let table = script.create_table().unwrap();
-
-		let udp = &mut Window::getNetwork().udp;
-		if udp.is_none() { return Ok(table); }
-		let udp = udp.as_mut().unwrap();
-
-		let buffer = &mut [0u8; 1024];
-		let mut result = udp.recv(buffer);
-		let mut size = 0;
-		while !result.is_err()
-		{
-			size = result.unwrap();
-			result = udp.recv(buffer);
-		}
-		let err = result.unwrap_err();
-		match err.kind()
-		{
-			ErrorKind::WouldBlock => {},
-			ErrorKind::ConnectionRefused =>
-			{
-				Window::getNetwork().udp = None;
-			},
-			_ => println!("UDP: {:?}", err)
-		}
-
-		for i in 0..size
-		{
-			table.raw_push(buffer[i]);
-		}
-		Ok(table)
-	}
-
-	pub fn sendStateUDP(_: &Lua, data: (i8, bool, bool, bool, f32, f32)) -> Result<(), Error>
-	{
-		let net = Window::getNetwork();
-		if net.udp.is_none() { return Ok(()); }
-		let id = Window::getNetwork().id;
-		let velX = data.0;
-		let jump = data.1;
-		let attack = data.2;
-		let protect = data.3;
-		let mut state = id - 1;
-		if velX == -1 { state = state | 0b00_10_00_00; }
-		if velX == 1  { state = state | 0b00_01_00_00; }
-		if jump { state = state | 0b00_00_10_00; }
-		if attack { state = state | 0b10_00_00_00; }
-		if protect { state = state | 0b01_00_00_00; }
-
-		let udp = net.udp.as_mut().unwrap();
-		let posX = &data.4.to_le_bytes() as &[u8];
-		let posY = &data.5.to_le_bytes() as &[u8];
-		udp.send(&[&[state], posX, posY].concat());
+		let state = &mut Window::getNetwork().mainState;
+		state.pos = (data.0 as f32, data.1 as f32);
+		state.vel = (data.2 as f32, data.3 as f32);
+		state.moveX = data.4.get::<i8>("MoveX").unwrap_or(0);
+		state.jump = data.4.get::<bool>("Jump").unwrap_or(false);
+		state.attack = data.4.get::<bool>("Attack").unwrap_or(false);
+		state.protect = data.4.get::<bool>("Protect").unwrap_or(false);
 		Ok(())
 	}
 
@@ -186,77 +199,165 @@ impl Network
 		Ok(())
 	}
 
-	pub fn setName(_: &Lua, name: String) -> Result<(), Error>
-	{
-		Window::getNetwork().name = name;
-		Ok(())
-	}
-
-	pub fn getName(_: &Lua, _: ()) -> Result<String, Error>
-	{
-		Ok(Window::getNetwork().name.clone())
-	}
-
-	pub fn setID(_: &Lua, id: i32) -> Result<(), Error>
-	{
-		Window::getNetwork().id = id as u8;
-		Ok(())
-	}
-
-	pub fn getID(_: &Lua, _: ()) -> Result<i32, Error>
-	{
-		Ok(Window::getNetwork().id as i32)
-	}
-
-	pub fn setClass(_: &Lua, class: String) -> Result<(), Error>
-	{
-		Window::getNetwork().class = class;
-		Ok(())
-	}
-
-	pub fn getClass(_: &Lua, _: ()) -> Result<String, Error>
-	{
-		Ok(Window::getNetwork().class.clone())
-	}
+	pub fn name(_: &Lua, _: ()) -> Result<String, Error> { Ok(Window::getNetwork().name.clone()) }
+	pub fn id(_: &Lua, _: ()) -> Result<i32, Error> { Ok(Window::getNetwork().id as i32) }
+	pub fn class(_: &Lua, _: ()) -> Result<String, Error> { Ok(Window::getNetwork().class.clone()) }
 
 	pub fn parseID(_: &Lua, raw: u8) -> Result<u8, Error>
 	{
 		Ok((raw & 0b00_00_01_11) + 1)
 	}
 
-	pub fn bytesToNum(_: &Lua, raw: (u8, u8, u8, u8)) -> Result<f64, Error>
+	pub fn bytesToU16(_: &Lua, raw: (u8, u8)) -> Result<u16, Error>
 	{
-		Ok(f32::from_le_bytes([raw.0, raw.1, raw.2, raw.3]) as f64)
+		Ok(u16::from_le_bytes([raw.0, raw.1]))
 	}
-
-	/*
-		00 00 00 00 - P1 стоит на месте
-		00 00 00 01 - P2 стоит на месте
-		00 00 00 10 - P3 стоит на месте
-		00 00 00 11 - P4 стоит на месте
-		00 00 01 00 - P5 стоит на месте
-
-		00 10 00 00 - P1 движется влево
-		00 01 00 00 - Р1 движется вправо
-		00 00 10 00 - Р1 прыгнул
-
-		10 00 00 00 - Р1 атакует текущим оружием
-		01 00 00 00 - Р1 встал в защиту
-
-		ServerMessage::PlayerWeaponChanged(String) - игрок поменял текущее оружие
-	*/
 
 	pub fn parseState(_: &Lua, raw: u8) -> Result<(i8, bool, bool, bool), Error>
 	{
-		let moveLeft = (raw & 0b00_10_00_00) != 0;
-		let moveRight = (raw & 0b00_01_00_00) != 0;
-		let jump = (raw & 0b00_00_10_00) != 0;
-		let attack = (raw & 0b10_00_00_00) != 0;
-		let protect = (raw & 0b01_00_00_00) != 0;
+		let moveX: i8;
+		let jump = raw & 0b00_00_10_00 != 0;
+		let attack = raw & 0b10_00_00_00 != 0;
+		let protect = raw & 0b01_00_00_00 != 0;
+		if raw & 0b00_10_00_00 != 0 { moveX = -1; }
+		else if raw & 0b00_01_00_00 != 0 { moveX = 1; }
+		else { moveX = 0; }
+		Ok((moveX, jump, attack, protect))
+	}
 
+	pub fn login(_: &Lua, data: Table) -> Result<(), Error>
+	{
+		let net = Window::getNetwork();
+
+		let mut buffer = Vec::<u8>::new();
+		for x in data.pairs::<Value, Integer>()
+		{
+			if x.is_err() { continue; }
+			let (_, b) = x.unwrap();
+			buffer.push(b as u8);
+		}
+
+		net.id = buffer[0];
+
+		net.name = {
+			let mut nameLength = 0;
+			while buffer[1 + nameLength] != 0 { nameLength += 1; }
+			String::from_utf8_lossy(&buffer[1..1 + nameLength]).to_string()
+		};
+		
+		net.class = {
+			let mut classLength = 0;
+			while buffer[2 + net.name.len() + classLength] != 0
+			{
+				classLength += 1;
+			}
+			String::from_utf8_lossy(
+				&buffer[2 + net.name.len()..2 + net.name.len() + classLength]
+			).to_string()
+		};
+
+		let addr = net.tcp.as_mut().unwrap().peer_addr().unwrap().ip().to_string() + ":" +
+		&u16::from_le_bytes([
+			buffer[3 + net.name.len() + net.class.len()],
+			buffer[4 + net.name.len() + net.class.len()]
+		]).to_string();
+		println!("Connecting UDP to {addr}");
+		net.udp.as_mut().unwrap().connect(addr);
+
+		net.tickRate = buffer[5 + net.name.len() + net.class.len()];
+
+		net.tickTime = Duration::from_secs_f32(1.0 / (net.tickRate as f32));
+		
+		Window::getWorld().prog.insert(
+			String::from("checkpoint"),
+			Variable
+			{
+				num: 0.0,
+				string: String::from_utf8_lossy(
+					&buffer[6 + net.name.len() + net.class.len()..buffer.len()]
+				).to_string()
+			}
+		);
+
+		std::thread::spawn(Network::networkThread);
+		
+		Ok(())
+	}
+
+	pub fn getState(_: &Lua, id: u8) -> Result<(f32, f32, f32, f32, i8, bool, bool, bool), Error>
+	{
+		if id == 0
+		{
+			return Ok((
+				0.0, 0.0, 0.0, 0.0,
+				0, false, false, false
+			))
+		}
+
+		let net = Window::getNetwork();
+		let s = net.state[(id - 1) as usize];
 		Ok((
-			if moveLeft { -1 } else if moveRight { 1 } else { 0 },
-			jump, attack, protect
+			s.pos.0, s.pos.1, s.vel.0, s.vel.1,
+			s.moveX, s.jump, s.attack, s.protect
 		))
+	}
+
+	fn receiveUDP(&mut self) -> Option<Vec<u8>>
+	{
+		let udp = self.udp.as_mut().unwrap();
+		let buffer = &mut [0u8; 128];
+		let mut result = udp.recv(buffer);
+		let mut size = 0;
+		while result.is_ok()
+		{
+			size = result.unwrap();
+			result = udp.recv(buffer);
+		}
+		match result.as_mut().unwrap_err().kind()
+		{
+			ErrorKind::WouldBlock => {},
+			_ =>
+			{
+				println!("STOPPING NETWORK THREAD; UDP ERROR:\n{}", result.unwrap_err());
+				self.udp = None;
+				return None;
+			}
+		}
+		Some(buffer[..size].to_vec())
+	}
+
+	fn sendUDP(&mut self)
+	{
+		let udp = self.udp.as_mut().unwrap();
+		let data = self.mainState.raw(self.id);
+		udp.send(&data);
+	}
+
+	pub fn networkThread()
+	{
+		let net = Window::getNetwork();
+		let mut timer = Instant::now();
+		'main: loop
+		{
+			while timer.elapsed() < net.tickTime {}
+
+			let data = net.receiveUDP();
+			if data.is_none() { break 'main; }
+			let data = data.unwrap();
+			if data.len() % 9 != 0
+			{
+				println!("WRONG UDP PACKET SIZE: {}", data.len());
+				net.udp = None;
+				break 'main;
+			}
+			for i in 0..(data.len() / 9)
+			{
+				let (id, s) = State::parse(&data[i * 9..(i + 1) * 9]);
+				net.state[(id - 1) as usize] = s;
+			}
+
+			net.sendUDP();
+			timer = Instant::now();
+		}
 	}
 }

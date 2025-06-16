@@ -1,9 +1,8 @@
-use mlua::{Error, Function, Lua, Number, Table, Value};
-use wrapped2d::b2;
+use mlua::{Error, Function, Lua, Value};
 
 use crate::ae2d::{Assets, Camera::Drawable, Programmable::{Programmable, Variable}, Window::Window};
 
-use super::{AnimatedSprite::AnimatedSprite, World::{self}};
+use super::{AnimatedSprite::AnimatedSprite, Physics::Rigidbody, World::World};
 
 #[derive(Clone, Debug)]
 pub struct Entity
@@ -13,11 +12,13 @@ pub struct Entity
 	prog: Programmable,
 	group: String,
 	script: Lua,
+	rb: Rigidbody,
 	drawable: Vec<AnimatedSprite>,
-	friendly: String,
-	hostile: String,
-	funcs: Option<(Function, Function)>,
-	physics: Option<b2::BodyHandle>
+	prePhysicsFN: Option<Function>,
+	onCollidedFN: Option<Function>,
+	midPhysicsFN: Option<Function>,
+	postPhysicsFN: Option<Function>,
+	drawFN: Option<Function>
 }
 
 impl Entity
@@ -31,11 +32,13 @@ impl Entity
 			prog: Programmable::new(),
 			group: String::new(),
 			script: Lua::new(),
+			rb: Rigidbody::new(),
 			drawable: vec![],
-			friendly: String::new(),
-			hostile: String::new(),
-			funcs: None,
-			physics: None
+			prePhysicsFN: None,
+			onCollidedFN: None,
+			midPhysicsFN: None,
+			postPhysicsFN: None,
+			drawFN: None
 		}
 	}
 	pub fn load(path: String) -> Self
@@ -65,14 +68,6 @@ impl Entity
 					).unwrap_or(String::new()).to_string()
 				).exec();
 			}
-			if name == "friendly"
-			{
-				ent.friendly = element.text().unwrap_or("").to_string();
-			}
-			if name == "hostile"
-			{
-				ent.hostile = element.text().unwrap_or("").to_string();
-			}
 		}
 
 		ent
@@ -90,33 +85,39 @@ impl Entity
 		self.initLua();
 		AnimatedSprite::initLua(&self.script);
 		Window::initLua(&self.script);
-		World::World::initLua(&self.script);
-
-		let update: Function;
-		let draw: Function;
+		World::initLua(&self.script);
+		Rigidbody::initLua(&self.script);
 
 		match self.script.globals().get::<Function>("Init")
 		{
 			Ok(func) => { func.call::<Value>(()); }
-			Err(_) => { panic!("Entity: {}\n'Init' function not found", self.id); }
+			Err(_) => { println!("Entity: {}\n'Init' function not found", self.id); }
 		}
-		match self.script.globals().get::<Function>("Update")
+		match self.script.globals().get::<Function>("PrePhysics")
 		{
-			Ok(f) => { update = f; }
-			Err(_) => { panic!("Entity: {}\n'Update' function not found", self.id); }
+			Ok(f) => { self.prePhysicsFN = Some(f); }
+			Err(_) => { println!("Entity: {}\n'PrePhysics' function not found", self.id); }
+		}
+		match self.script.globals().get::<Function>("OnCollided")
+		{
+			Ok(f) => { self.onCollidedFN = Some(f); }
+			Err(_) => { println!("Entity: {}\n'OnCollided' function not found", self.id); }
+		}
+		match self.script.globals().get::<Function>("PostPhysics")
+		{
+			Ok(f) => { self.postPhysicsFN = Some(f); }
+			Err(_) => { println!("Entity: {}\n'PostPhysics' function not found", self.id); }
+		}
+		match self.script.globals().get::<Function>("MidPhysics")
+		{
+			Ok(f) => { self.midPhysicsFN = Some(f); }
+			Err(_) => { println!("Entity: {}\n'MidPhysics' function not found", self.id); }
 		}
 		match self.script.globals().get::<Function>("Draw")
 		{
-			Ok(f) => { draw = f; }
-			Err(_) => { panic!("Entity: {}\n'Draw' function not found", self.id); }
+			Ok(f) => { self.drawFN = Some(f); }
+			Err(_) => { println!("Entity: {}\n'Draw' function not found", self.id); }
 		}
-
-		self.funcs = Some((update, draw));
-	}
-
-	pub fn update(&mut self)
-	{
-		self.funcs.as_mut().unwrap().0.call::<Value>(());
 	}
 
 	fn initLua(&mut self)
@@ -133,19 +134,6 @@ impl Entity
 		table.set("createSprite", self.script.create_function(Entity::createSprite).unwrap());
 
 		self.script.globals().set("entity", table);
-
-		let table = self.script.create_table().unwrap();
-
-		table.set("init", self.script.create_function(Entity::physics_init).unwrap());
-		table.set("setBodyType", self.script.create_function(Entity::physics_setBodyType).unwrap());
-		table.set("setHitbox", self.script.create_function(Entity::physics_setHitbox).unwrap());
-		table.set("getTransform", self.script.create_function(Entity::physics_getTransform).unwrap());
-		table.set("setTransform", self.script.create_function(Entity::physics_setTransform).unwrap());
-		table.set("getVelocity", self.script.create_function(Entity::physics_getVelocity).unwrap());
-		table.set("setVelocity", self.script.create_function(Entity::physics_setVelocity).unwrap());
-		table.set("applyForce", self.script.create_function(Entity::physics_applyForce).unwrap());
-
-		self.script.globals().set("physics", table);
 	}
 
 	pub fn setNumFN(_: &Lua, args: (String, f32)) -> Result<(), Error>
@@ -211,151 +199,52 @@ impl Entity
 	{
 		self.drawable.get_mut(id).unwrap()
 	}
+
+	pub fn prePhysics(&mut self)
+	{
+		Window::getWorld().setCurrentEntity(self);
+		if let Some(f) = &self.prePhysicsFN
+		{
+			f.call::<Value>(());
+		}
+	}
+
+	pub fn onCollided(&mut self, dir: u8, name: String, id: String, h: glam::Vec4)
+	{
+		Window::getWorld().setCurrentEntity(self);
+		if let Some(f) = &self.onCollidedFN
+		{
+			f.call::<Value>((dir, name, id, h.x, h.y, h.z, h.w));
+		}
+	}
+
+	pub fn midPhysics(&mut self)
+	{
+		Window::getWorld().setCurrentEntity(self);
+		if let Some(f) = &self.midPhysicsFN
+		{
+			f.call::<Value>(());
+		}
+	}
+
+	pub fn postPhysics(&mut self)
+	{
+		Window::getWorld().setCurrentEntity(self);
+		if let Some(f) = &self.postPhysicsFN
+		{
+			f.call::<Value>(());
+		}
+	}
+
+	pub fn execute(&mut self, cmd: String)
+	{
+		self.script.load(cmd).exec();
+	}
 	
-	pub fn getID(&mut self) -> &String { &self.id }
+	pub fn getRB(&mut self) -> &mut Rigidbody { &mut self.rb }
+	pub fn getID(&self) -> &String { &self.id }
+	pub fn getName(&self) -> &String { &self.name }
 	pub fn getProgrammable(&mut self) -> &mut Programmable { &mut self.prog }
-
-	pub fn physics_init(_: &Lua, data: Table) -> Result<(), Error>
-	{
-		let mut bd = b2::BodyDef::new();
-		for info in data.pairs::<String, Value>()
-		{
-			if info.is_err() { continue; }
-			let (name, value) = info.unwrap();
-			if name == "lockRotation" { bd.fixed_rotation = value.as_boolean().unwrap_or(false); }
-		}
-		let ent = Window::getWorld().getCurrentEntity();
-		ent.physics = Some(
-			Window::getWorld().getB2D().create_body_with(&bd, ent.id.clone())
-		);
-		Ok(())
-	}
-
-	pub fn physics_setBodyType(_: &Lua, data: String) -> Result<(), Error>
-	{
-		let ent = Window::getWorld().getCurrentEntity();
-		if ent.physics.is_none() { return Ok(()); }
-		let mut body = Window::getWorld().getB2D().body_mut(ent.physics.unwrap());
-		body.set_body_type(
-			if data == "static" { b2::BodyType::Static }
-			else if data == "kinematic" { b2::BodyType::Kinematic }
-			else { b2::BodyType::Dynamic }
-		);
-		Ok(())
-	}
-
-	pub fn physics_setHitbox(_: &Lua, data: Table) -> Result<(), Error>
-	{
-		let ent = Window::getWorld().getCurrentEntity();
-		if ent.physics.is_none() { return Ok(()); }
-		let mut body = Window::getWorld().getB2D().body_mut(ent.physics.unwrap());
-		
-		let mut list = vec![];
-		for handle in body.fixtures()
-		{
-			list.push(handle.0);
-		}
-
-		for i in list
-		{
-			body.destroy_fixture(i);
-		}
-
-		let mut fd = b2::FixtureDef::new();
-		fd.density = 1.0;
-
-		for hitbox in data.pairs::<String, Value>()
-		{
-			if hitbox.is_err() { continue; }
-			let (name, data) = hitbox.unwrap();
-
-			if name == "Friction" { fd.friction = data.as_f32().unwrap_or(0.0); continue; }
-
-			let data = data.as_table().unwrap();
-
-			let mut shape = vec![];
-
-			for point in data.pairs::<Value, Table>()
-			{
-				if point.is_err() { continue; }
-				let (_, point) = point.unwrap();
-				shape.push(b2::Vec2 {
-					x: (point.raw_get::<Number>(1).unwrap() as f32) / World::m2p,
-					y: (point.raw_get::<Number>(2).unwrap() as f32) / World::m2p
-				});
-			}
-
-			body.create_fixture_with(
-				&b2::PolygonShape::new_with(&shape),
-				&mut fd,
-				name
-			);
-		}
-		
-		Ok(())
-	}
-
-	pub fn physics_getTransform(_: &Lua, _: ()) -> Result<(Number, Number, Number), Error>
-	{
-		let ent = Window::getWorld().getCurrentEntity();
-		if ent.physics.is_none() { return Ok((0.0, 0.0, 0.0)); }
-		let body = Window::getWorld().getB2D().body(ent.physics.unwrap());
-		Ok((
-			(body.position().x * World::m2p) as f64,
-			(body.position().y * World::m2p) as f64,
-			body.angle().to_degrees() as f64
-		))
-	}
-
-	pub fn physics_setTransform(_: &Lua, data: (f32, f32, f32)) -> Result<(), Error>
-	{
-		let ent = Window::getWorld().getCurrentEntity();
-		if ent.physics.is_none() { return Ok(()); }
-		let mut body = Window::getWorld().getB2D().body_mut(ent.physics.unwrap());
-
-		body.set_transform(
-			&b2::Vec2 {
-				x: data.0 / World::m2p,
-				y: data.1 / World::m2p
-			},
-			data.2.to_radians()
-		);
-		Ok(())
-	}
-
-	pub fn physics_setVelocity(_: &Lua, data: (f32, f32)) -> Result<(), Error>
-	{
-		let ent = Window::getWorld().getCurrentEntity();
-		if ent.physics.is_none() { return Ok(()); }
-		let mut body = Window::getWorld().getB2D().body_mut(ent.physics.unwrap());
-		body.set_linear_velocity(&b2::Vec2 {
-			x: data.0 / World::m2p,
-			y: data.1 / World::m2p
-		});
-		Ok(())
-	}
-
-	pub fn physics_getVelocity(_: &Lua, _: ()) -> Result<(f32, f32), Error>
-	{
-		let ent = Window::getWorld().getCurrentEntity();
-		if ent.physics.is_none() { return Ok((0.0, 0.0)); }
-		let body = Window::getWorld().getB2D().body(ent.physics.unwrap());
-		Ok((
-			body.linear_velocity().x * World::m2p,
-			body.linear_velocity().y * World::m2p
-		))
-	}
-
-	pub fn physics_applyForce(_: &Lua, f: (f32, f32)) -> Result<(), Error>
-	{
-		let ent = Window::getWorld().getCurrentEntity();
-		if ent.physics.is_none() { return Ok(()); }
-		let mut body = Window::getWorld().getB2D().body_mut(ent.physics.unwrap());
-		body.apply_force_to_center(&b2::Vec2 {
-			x: f.0, y: f.1
-		}, true);
-		Ok(())
-	}
 }
 
 impl Drawable for Entity
@@ -363,6 +252,9 @@ impl Drawable for Entity
 	fn draw(&mut self)
 	{
 		Window::getWorld().setCurrentEntity(self);
-		self.funcs.as_mut().unwrap().1.call::<Value>(());
+		if let Some(f) = &self.drawFN
+		{
+			f.call::<Value>(());
+		}
 	}
 }

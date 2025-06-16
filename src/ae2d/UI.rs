@@ -2,7 +2,7 @@ use mlua::{Error, Function, Integer, Lua, Number, StdLib};
 
 use crate::ae2d::{Assets, Programmable::{Programmable, Variable}, Window::Window};
 
-use super::{Camera::Drawable, FrameAnimation::Animator, Transformable::Transformable2D};
+use super::{envell::World::World, Camera::Drawable, FrameAnimation::Animator, Transformable::Transformable2D};
 pub struct Image
 {
 	animation: Animator,
@@ -196,7 +196,7 @@ impl Image
 		Ok(())
 	}
 
-	pub fn initLua(&mut self, script: &Lua)
+	pub fn initLua(script: &Lua)
 	{
 		let table = script.create_table().unwrap();
 
@@ -840,7 +840,7 @@ impl Text
 		Ok(obj.getText().getString())
 	}
 
-	pub fn initLua(&mut self, script: &mut Lua)
+	pub fn initLua(script: &Lua)
 	{
 		let table = script.create_table().unwrap();
 
@@ -970,9 +970,10 @@ impl Object
 		{
 			obj.script.load_std_libs(StdLib::ALL_SAFE);
 	
-			obj.image.initLua(&mut obj.script);
-			obj.text.initLua(&mut obj.script);
-			Window::initLua(&mut obj.script);
+			Image::initLua(&obj.script);
+			Text::initLua(&obj.script);
+			Window::initLua(&obj.script);
+			World::initLua(&obj.script);
 
 			let table = obj.script.create_table().unwrap();
 

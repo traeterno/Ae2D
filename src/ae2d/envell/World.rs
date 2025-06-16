@@ -1,22 +1,10 @@
 use std::ptr::null;
 
-use mlua::{Error, Function, IntoLuaMulti, Lua, StdLib, Value::{self}};
-use wrapped2d::{b2, user_data::UserDataTypes};
+use mlua::{Error, Function, Lua, StdLib, Value::{self}};
 
 use crate::ae2d::{Assets, Camera::Drawable, Network::Network, Programmable::{Programmable, Variable}, Window::Window};
 
-use super::{DebugDraw::DebugDraw, Entity::Entity};
-
-pub const m2p: f32 = 64.0;
-
-pub struct EntData;
-
-impl UserDataTypes for EntData
-{
-	type BodyData = String;
-	type FixtureData = String;
-	type JointData = String;
-}
+use super::Entity::Entity;
 
 pub struct World
 {
@@ -25,9 +13,7 @@ pub struct World
 	currentEnt: *mut Entity,
 	updateFN: Option<Function>,
 	postUpdateFN: Option<Function>,
-	prog: Programmable,
-	b2d: b2::World<EntData>,
-	debugDraw: DebugDraw
+	pub prog: Programmable
 }
 
 impl World
@@ -41,9 +27,7 @@ impl World
 			currentEnt: null::<Entity>() as *mut _,
 			updateFN: None,
 			postUpdateFN: None,
-			prog: Programmable::new(),
-			b2d: b2::World::new(&b2::Vec2 { x: 0.0, y: 0.0 }),
-			debugDraw: DebugDraw {}
+			prog: Programmable::new()
 		};
 		
 		world.script.load_std_libs(StdLib::ALL_SAFE);
@@ -60,7 +44,8 @@ impl World
 		table.set("setStr", script.create_function(World::setStrFN).unwrap());
 		table.set("getNum", script.create_function(World::getNumFN).unwrap());
 		table.set("getStr", script.create_function(World::getStrFN).unwrap());
-		table.set("setGravity", script.create_function(World::setGravityFN).unwrap());
+		table.set("hitbox", script.create_function(World::hitboxFN).unwrap());
+		table.set("execute", script.create_function(World::executeFN).unwrap());
 		script.globals().set("world", table);
 	}
 
@@ -77,6 +62,11 @@ impl World
 			.unwrap_or("")
 			.to_string()
 		).unwrap()).exec();
+
+		if let Ok(func) = self.script.globals().get::<Function>("Init")
+		{
+			func.call::<Value>(());
+		}
 
 		for el in doc.elements()
 		{
@@ -113,11 +103,6 @@ impl World
 			}
 		}
 
-		if let Ok(func) = self.script.globals().get::<Function>("Init")
-		{
-			func.call::<Value>(());
-		}
-
 		if let Ok(func) = self.script.globals().get::<Function>("Update")
 		{
 			self.updateFN = Some(func);
@@ -131,7 +116,6 @@ impl World
 
 	pub fn update(&mut self)
 	{
-		self.b2d.step(Window::getDeltaTime(), 12, 8);
 		if let Some(func) = &self.updateFN
 		{
 			func.call::<Value>(());
@@ -140,7 +124,36 @@ impl World
 		for ent in &mut self.ents
 		{
 			self.currentEnt = ent;
-			ent.update();
+			ent.prePhysics();
+		}
+
+		for dir in 0..2
+		{
+			for i in 0..self.ents.len()
+			{
+				let n1 = self.ents[i].getName().clone();
+				let id1 = self.ents[i].getID().clone();
+				for j in i..self.ents.len()
+				{
+					if j == i { continue; }
+					let h = self.ents[j].getRB().getHitbox();
+					if self.ents[i].getRB().checkCollision(h)
+					{
+						let n2 = self.ents[j].getName().clone();
+						let id2 = self.ents[j].getName().clone();
+						let h1 = self.ents[i].getRB().getHitbox();
+						self.ents[i].onCollided(dir, n2.clone(), id2.clone(), h);
+						self.ents[j].onCollided(dir, n1.clone(), id1.clone(), h1);
+					}
+				}
+				if dir == 0 { self.ents[i].midPhysics(); }
+			}
+		}
+
+		for ent in &mut self.ents
+		{
+			self.currentEnt = ent;
+			ent.postPhysics();
 		}
 
 		if let Some(func) = &self.postUpdateFN
@@ -151,15 +164,10 @@ impl World
 
 	pub fn render(&mut self)
 	{
-		// let cam = Window::getCamera();
-		// cam.toggleCameraTransform(true);
-
 		for ent in &mut self.ents
 		{
 			ent.draw();
 		}
-
-		self.b2d.draw_debug_data(&mut self.debugDraw, b2::DrawFlags::DRAW_SHAPE);
 	}
 
 	pub fn getCurrentEntity(&mut self) -> &mut Entity
@@ -172,16 +180,24 @@ impl World
 		self.currentEnt = ent;
 	}
 
-	pub fn execute(&mut self, func: String, args: impl IntoLuaMulti)
+	pub fn getEntity(&mut self, name: String) -> Option<&mut Entity>
 	{
-		if let Ok(f) =
-			self.script.globals().get::<Function>(func)
+		for e in &mut self.ents
 		{
-			f.call::<Value>(args);
+			if *e.getID() == name { return Some(e); }
 		}
+		None
 	}
 
-	pub fn getB2D(&mut self) -> &mut b2::World<EntData> { &mut self.b2d }
+	pub fn executeFN(_: &Lua, data: (String, String)) -> Result<(), Error>
+	{
+		if let Some(e) = Window::getWorld().getEntity(data.0)
+		{
+			Window::getWorld().setCurrentEntity(e);
+			e.execute(data.1);
+		}
+		Ok(())
+	}
 
 	pub fn setNumFN(_: &Lua, args: (String, f32)) -> Result<(), Error>
 	{
@@ -217,9 +233,9 @@ impl World
 		Ok(var.unwrap().string.clone())
 	}
 
-	pub fn setGravityFN(_: &Lua, g: (f32, f32)) -> Result<(), Error>
+	pub fn hitboxFN(_: &Lua, id: usize) -> Result<(f32, f32, f32, f32), Error>
 	{
-		Window::getWorld().b2d.set_gravity(&b2::Vec2 { x: g.0, y: g.1 });
-		Ok(())
+		let h = Window::getWorld().ents[id].getRB().getHitbox();
+		Ok((h.x, h.y, h.z, h.w))
 	}
 }

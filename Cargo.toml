@@ -10,7 +10,7 @@ glam = "0.29.2"
 spex = "0.2.2"
 stb_image = "0.3.0"
 sdl2 = "0.37.0"
-wrapped2d = "0.4.2"
+cpal = "0.16.0"
 
 [dependencies.mlua]
 version = "0.10.3"
