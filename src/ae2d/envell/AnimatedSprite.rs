@@ -27,9 +27,7 @@ impl AnimatedSprite
 	}
 
 	pub fn loadAnimator(&mut self, path: String) { self.anim.load(path); }
-	pub fn setAnimation(&mut self, anim: String) { self.anim.setCurrentAnimation(anim); }
 	pub fn getTransform(&mut self) -> &mut Transformable2D { &mut self.ts }
-	pub fn getAnimator(&mut self) -> &mut Animator { &mut self.anim }
 
 	fn update(&mut self)
 	{
@@ -89,20 +87,6 @@ impl AnimatedSprite
 		}
 	}
 
-	pub fn getBounds(&mut self) -> sdl2::rect::FRect
-	{
-		let size = self.anim.getFrameSize();
-		let p1 = self.ts.getMatrix() * glam::vec4(0.0, 0.0, 0.0, 1.0);
-		let p2 = self.ts.getMatrix() * glam::vec4(size.x as f32, 0.0, 0.0, 1.0);
-		let p3 = self.ts.getMatrix() * glam::vec4(size.x as f32, size.y as f32, 0.0, 1.0);
-		let p4 = self.ts.getMatrix() * glam::vec4(0.0, size.y as f32, 0.0, 1.0);
-
-		let min = p1.min(p2).min(p3).min(p4);
-		let max = p1.max(p2).max(p3).max(p4);
-
-		sdl2::rect::FRect::new(min.x, min.y, max.x - min.x, max.y - min.y)
-	}
-
 	pub fn initLua(script: &Lua)
 	{
 		let table = script.create_table().unwrap();
@@ -110,6 +94,7 @@ impl AnimatedSprite
 		table.set("setAnimation", script.create_function(AnimatedSprite::setAnimFN).unwrap());
 		table.set("setColor", script.create_function(AnimatedSprite::setColorFN).unwrap());
 		table.set("draw", script.create_function(AnimatedSprite::drawFN).unwrap());
+		table.set("bounds", script.create_function(AnimatedSprite::boundsFN).unwrap());
 		table.set("setPosition", script.create_function(AnimatedSprite::setPosFN).unwrap());
 		table.set("translate", script.create_function(AnimatedSprite::addPosFN).unwrap());
 		table.set("getPosition", script.create_function(AnimatedSprite::getPosFN).unwrap());
@@ -144,6 +129,21 @@ impl AnimatedSprite
 	pub fn drawFN(_: &Lua, id: usize) -> Result<(), Error>
 	{
 		Window::getWorld().getCurrentEntity().getSprite(id).draw(); Ok(())
+	}
+
+	pub fn boundsFN(_: &Lua, id: usize) -> Result<(f32, f32, f32, f32), Error>
+	{
+		let anim = Window::getWorld().getCurrentEntity().getSprite(id);
+		let size = anim.anim.getFrameSize();
+		let p1 = anim.ts.getMatrix() * glam::vec4(0.0, 0.0, 0.0, 1.0);
+		let p2 = anim.ts.getMatrix() * glam::vec4(size.x as f32, 0.0, 0.0, 1.0);
+		let p3 = anim.ts.getMatrix() * glam::vec4(size.x as f32, size.y as f32, 0.0, 1.0);
+		let p4 = anim.ts.getMatrix() * glam::vec4(0.0, size.y as f32, 0.0, 1.0);
+
+		let min = p1.min(p2).min(p3).min(p4);
+		let max = p1.max(p2).max(p3).max(p4);
+
+		Ok((min.x, min.y, max.x - min.x, max.y - min.y))
 	}
 
 	pub fn setPosFN(_: &Lua, data: (usize, f32, f32)) -> Result<(), Error>

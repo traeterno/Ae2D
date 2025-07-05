@@ -139,8 +139,6 @@ impl Animator
 		}
 	}
 
-	pub fn getSize(&mut self) -> glam::IVec2 { self.size }
-
 	pub fn getFrameSize(&mut self) -> glam::IVec2 { self.frame }
 
 	pub fn update(&mut self) -> bool

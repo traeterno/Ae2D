@@ -1,6 +1,8 @@
-use std::{io::{ErrorKind, Read}, net::{TcpStream, UdpSocket}, time::{Duration, Instant}};
+use std::{io::{ErrorKind, Read, Write}, net::{TcpStream, UdpSocket}, time::{Duration, Instant}};
 
 use mlua::{Error, Lua, Table};
+
+use crate::server::Transmission::ClientMessage;
 
 use super::Window::Window;
 
@@ -72,16 +74,6 @@ impl PlayerState
 	}
 }
 
-#[derive(Debug)]
-pub enum ClientMessage
-{
-	Login(u8, String, String),
-	Disconnected(u8),
-	Chat(String),
-	SetPosition(u16, u16),
-	GetInfo(u16, u8, String, u8)
-}
-
 pub struct Network
 {
 	tcp: Option<TcpStream>,
@@ -129,6 +121,7 @@ impl Network
 		table.set("getState", script.create_function(Network::getState).unwrap());
 		table.set("hasMessage", script.create_function(Network::hasMessage).unwrap());
 		table.set("getMessage", script.create_function(Network::getMessage).unwrap());
+		table.set("sendMessage", script.create_function(Network::sendMessage).unwrap());
 
 		script.globals().set("network", table);
 	}
@@ -171,33 +164,6 @@ impl Network
 		net.id = data.0;
 		net.name = data.1;
 		net.class = data.2;
-
-		// let mut buffer = Vec::<u8>::new();
-		// for x in data.pairs::<Value, Integer>()
-		// {
-		// 	if x.is_err() { continue; }
-		// 	let (_, b) = x.unwrap();
-		// 	buffer.push(b as u8);
-		// }
-
-		// net.id = buffer[0];
-
-		// net.name = {
-		// 	let mut nameLength = 0;
-		// 	while buffer[1 + nameLength] != 0 { nameLength += 1; }
-		// 	String::from_utf8_lossy(&buffer[1..1 + nameLength]).to_string()
-		// };
-		
-		// net.class = {
-		// 	let mut classLength = 0;
-		// 	while buffer[2 + net.name.len() + classLength] != 0
-		// 	{
-		// 		classLength += 1;
-		// 	}
-		// 	String::from_utf8_lossy(
-		// 		&buffer[2 + net.name.len()..2 + net.name.len() + classLength]
-		// 	).to_string()
-		// };
 
 		// let addr = net.tcp.as_mut().unwrap().peer_addr().unwrap().ip().to_string() + ":" +
 		// &u16::from_le_bytes([
@@ -284,6 +250,22 @@ impl Network
 		}
 
 		Ok(table)
+	}
+
+	fn sendMessage(_: &Lua, (msg, data): (u8, Table)) -> Result<(), Error>
+	{
+		let net = Window::getNetwork();
+		let tcp = net.tcp.as_mut().unwrap();
+		tcp.write(&match msg
+		{
+			1 =>
+			{
+				let name: String = data.get("name").unwrap();
+				[&[1u8], name.as_bytes()].concat()
+			}
+			_ => vec![]
+		});
+		Ok(())
 	}
 
 	fn receiveUDP(&mut self) -> Option<Vec<u8>>

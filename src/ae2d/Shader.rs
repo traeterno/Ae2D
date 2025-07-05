@@ -189,8 +189,6 @@ impl Shader
 		}
 		out
 	}
-
-	pub fn isLoaded(&mut self) -> bool { self.program != 0 }
 }
 
 impl Drop for Shader
