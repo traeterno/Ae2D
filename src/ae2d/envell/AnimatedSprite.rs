@@ -62,16 +62,16 @@ impl AnimatedSprite
 			let frame = self.anim.getCurrentFrame();
 			let size = self.anim.getFrameSize();
 			let vertices = [
-				0.0, 0.0,						frame.left(), frame.top(),
+				0.0, 0.0, frame.x, frame.y,
 				self.color.x, self.color.y, self.color.z, self.color.w,
 	
-				size.x as f32, 0.0,				frame.right(), frame.top(),
+				size.x as f32, 0.0, frame.x + frame.w, frame.y,
 				self.color.x, self.color.y, self.color.z, self.color.w,
 				
-				size.x as f32, size.y as f32,	frame.right(), frame.bottom(),
+				size.x as f32, size.y as f32, frame.x + frame.w, frame.y + frame.h,
 				self.color.x, self.color.y, self.color.z, self.color.w,
 				
-				0.0, size.y as f32,				frame.left(), frame.bottom(),
+				0.0, size.y as f32, frame.x, frame.y + frame.h,
 				self.color.x, self.color.y, self.color.z, self.color.w
 			];
 			unsafe

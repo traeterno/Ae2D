@@ -1,6 +1,6 @@
 use std::time::Instant;
 use mlua::{Error, Integer, Lua, Number};
-use sdl2::keyboard::Scancode;
+use sdl3::keyboard::Scancode;
 
 use super::{envell::World::World, Camera::Camera, Network::Network, Programmable::{Programmable, Variable}, UI::UI};
 
@@ -24,15 +24,15 @@ impl PartialEq for KeyAction
 #[derive(Clone, Copy, Debug)]
 pub struct KeyEvent
 {
-	pub key: sdl2::keyboard::Scancode,
-	pub mods: sdl2::keyboard::Mod,
+	pub key: sdl3::keyboard::Scancode,
+	pub mods: sdl3::keyboard::Mod,
 	pub action: KeyAction
 }
 
 #[derive(Clone, Copy)]
 pub struct MouseEvent
 {
-	pub btn: sdl2::mouse::MouseButton,
+	pub btn: sdl3::mouse::MouseButton,
 	pub clicks: u8,
 	pub pos: glam::Vec2
 }
@@ -40,22 +40,22 @@ pub struct MouseEvent
 pub struct Color
 {
 	name: String,
-	value: sdl2::pixels::Color
+	value: sdl3::pixels::Color
 }
 
 pub struct Window
 {
-	video: sdl2::VideoSubsystem,
-	window: Option<sdl2::video::Window>,
-	events: sdl2::EventPump,
+	video: sdl3::VideoSubsystem,
+	window: Option<sdl3::video::Window>,
+	events: sdl3::EventPump,
 	running: bool,
-	clearColor: sdl2::pixels::Color,
+	clearColor: sdl3::pixels::Color,
 	keyEvent: Option<KeyEvent>,
 	mouseEvent: Option<MouseEvent>,
 	palette: Vec<Color>,
 	deltaTime: f32,
 	lastTime: std::time::Instant,
-	mouse: sdl2::mouse::MouseUtil,
+	mouse: sdl3::mouse::MouseUtil,
 	lockCursor: bool,
 	mouseDelta: glam::Vec2,
 	ui: UI,
@@ -64,7 +64,7 @@ pub struct Window
 	maxDeltaTime: f32,
 	textInput: String,
 	net: super::Network::Network,
-	gl: Option<sdl2::video::GLContext>,
+	gl: Option<sdl3::video::GLContext>,
 	cam: Camera,
 	world: World
 }
@@ -73,14 +73,14 @@ impl Window
 {
 	pub fn default() -> Window
 	{
-		let c = sdl2::init().expect("Failed to initialize SDL");
+		let c = sdl3::init().expect("Failed to initialize SDL");
 		Window
 		{
 			video: c.video().unwrap(),
 			window: None,
 			events: c.event_pump().unwrap(),
 			running: true,
-			clearColor: sdl2::pixels::Color::BLACK,
+			clearColor: sdl3::pixels::Color::BLACK,
 			deltaTime: 0.0,
 			lastTime: Instant::now(),
 			keyEvent: None,
@@ -131,7 +131,7 @@ impl Window
 		let mut vsync = true;
 		let mut minDeltaTime = 0.001;
 		let mut maxDeltaTime = 1.0;
-		let mut clearColor = sdl2::pixels::Color::BLACK;
+		let mut clearColor = sdl3::pixels::Color::BLACK;
 		
 		let i = Window::getInstance();
 
@@ -157,7 +157,7 @@ impl Window
 				let value: Vec<&str> = x.text().unwrap_or("0 0 0 0").split(" ").collect();
 				i.palette.push(Color {
 					name: x.att_opt("name").unwrap_or("").to_string(),
-					value: sdl2::pixels::Color::RGBA(
+					value: sdl3::pixels::Color::RGBA(
 						value.get(0).unwrap().parse().unwrap(),
 						value.get(1).unwrap().parse().unwrap(),
 						value.get(2).unwrap().parse().unwrap(),
@@ -185,7 +185,7 @@ impl Window
 		i.clearColor = clearColor;
 
 		let attr = i.video.gl_attr();
-		attr.set_context_profile(sdl2::video::GLProfile::Core);
+		attr.set_context_profile(sdl3::video::GLProfile::Core);
 		attr.set_context_version(2, 1);
 		attr.set_depth_size(24);
 
@@ -195,14 +195,16 @@ impl Window
 		else { builder.position_centered(); }
 		if style.as_str() == "resizable" { builder.resizable(); }
 		if style.as_str() == "borderless" { builder.borderless(); }
-		if style.as_str() == "fullscreen" { builder.fullscreen_desktop(); }
+		if style.as_str() == "fullscreen" { builder.fullscreen(); }
 
 		i.window = Some(builder.opengl().build().unwrap());
 
+		i.video.text_input().start(i.window.as_ref().unwrap());
+
 		i.gl = Some(i.window.as_mut().unwrap().gl_create_context().unwrap());
-		gl::load_with(|name| i.video.gl_get_proc_address(name) as *const _);
+		gl::load_with(|name| i.video.gl_get_proc_address(name).unwrap() as *const _);
 		
-		i.video.gl_set_swap_interval(if vsync { sdl2::video::SwapInterval::VSync } else { sdl2::video::SwapInterval::Immediate });
+		i.video.gl_set_swap_interval(if vsync { sdl3::video::SwapInterval::VSync } else { sdl3::video::SwapInterval::Immediate });
 		i.mouse.show_cursor(!hideCursor);
 		i.lockCursor = lockCursor;
 
@@ -235,8 +237,8 @@ impl Window
 		{
 			match event
 			{
-				sdl2::event::Event::Quit {..} => { i.running = false; }
-				sdl2::event::Event::KeyDown { scancode, keymod, repeat, .. } =>
+				sdl3::event::Event::Quit {..} => { i.running = false; }
+				sdl3::event::Event::KeyDown { scancode, keymod, repeat, .. } =>
 				{
 					i.keyEvent = Some(KeyEvent
 					{
@@ -245,7 +247,7 @@ impl Window
 						action: if repeat { KeyAction::PressedRepeat } else { KeyAction::Pressed }
 					});
 				},
-				sdl2::event::Event::KeyUp { scancode, keymod, repeat, .. } =>
+				sdl3::event::Event::KeyUp { scancode, keymod, repeat, .. } =>
 				{
 					i.keyEvent = Some(KeyEvent
 					{
@@ -254,7 +256,7 @@ impl Window
 						action: if repeat { KeyAction::ReleasedRepeat } else { KeyAction::Released }
 					});
 				},
-				sdl2::event::Event::MouseButtonDown { mouse_btn, clicks, x, y, .. } =>
+				sdl3::event::Event::MouseButtonDown { mouse_btn, clicks, x, y, .. } =>
 				{
 					i.mouseEvent = Some(MouseEvent
 					{
@@ -263,7 +265,7 @@ impl Window
 						pos: glam::vec2(x as f32, y as f32)
 					});
 				},
-				sdl2::event::Event::MouseButtonUp { mouse_btn, x, y, .. } =>
+				sdl3::event::Event::MouseButtonUp { mouse_btn, x, y, .. } =>
 				{
 					i.mouseEvent = Some(MouseEvent
 					{
@@ -272,15 +274,15 @@ impl Window
 						pos: glam::vec2(x as f32, y as f32)
 					});
 				},
-				sdl2::event::Event::Window { win_event, .. } =>
+				sdl3::event::Event::Window { win_event, .. } =>
 				{
 					match win_event
 					{
-						sdl2::event::WindowEvent::Resized(x, y) =>
+						sdl3::event::WindowEvent::Resized(x, y) =>
 						{
 							unsafe { gl::Viewport(0, 0, x, y); }
 						},
-						sdl2::event::WindowEvent::Maximized =>
+						sdl3::event::WindowEvent::Maximized =>
 						{
 							unsafe { gl::Viewport(0, 0, Window::getSize().x as i32, Window::getSize().y as i32); }
 						},
@@ -289,12 +291,12 @@ impl Window
 					i.ui.resize();
 					i.cam.updateWinProj();
 				},
-				sdl2::event::Event::MouseMotion { x, y, xrel, yrel, .. } =>
+				sdl3::event::Event::MouseMotion { x, y, xrel, yrel, .. } =>
 				{
-					if x == Window::getSize().x as i32 / 2 && y == Window::getSize().y as i32 / 2 { continue; }
+					if x == Window::getSize().x / 2.0 && y == Window::getSize().y / 2.0 { continue; }
 					i.mouseDelta = glam::vec2(xrel as f32, yrel as f32);
 				},
-				sdl2::event::Event::TextInput { text, .. } =>
+				sdl3::event::Event::TextInput { text, .. } =>
 				{
 					i.textInput = text;
 				},
@@ -304,8 +306,8 @@ impl Window
 
 		if i.lockCursor { i.mouse.warp_mouse_in_window(
 			i.window.as_ref().unwrap(),
-			Window::getSize().x as i32 / 2,
-			Window::getSize().y as i32 / 2
+			Window::getSize().x / 2.0,
+			Window::getSize().y / 2.0
 		); }
 
 		i.world.update();
@@ -337,26 +339,26 @@ impl Window
 		glam::vec2(size.0 as f32, size.1 as f32)
 	}
 
-	pub fn isKeyPressed(key: sdl2::keyboard::Scancode) -> bool
+	pub fn isKeyPressed(key: sdl3::keyboard::Scancode) -> bool
 	{
 		Window::getInstance().events.keyboard_state().is_scancode_pressed(key)
 	}
 
-	pub fn isMousePressed(btn: sdl2::mouse::MouseButton) -> bool
+	pub fn isMousePressed(btn: sdl3::mouse::MouseButton) -> bool
 	{
 		Window::getInstance().events.mouse_state().is_mouse_button_pressed(btn)
 	}
 
-	pub fn getColor(name: String) -> sdl2::pixels::Color
+	pub fn getColor(name: String) -> sdl3::pixels::Color
 	{
 		for c in Window::getInstance().palette.iter()
 		{
 			if c.name == name { return c.value }
 		}
-		sdl2::pixels::Color::RGBA(0, 0, 0,0)
+		sdl3::pixels::Color::RGBA(0, 0, 0,0)
 	}
 
-    pub fn toGLcolor(clr: sdl2::pixels::Color) -> (f32, f32, f32, f32)
+    pub fn toGLcolor(clr: sdl3::pixels::Color) -> (f32, f32, f32, f32)
     {
         (
             clr.r as f32 / 255.0,
@@ -406,10 +408,10 @@ impl Window
 	pub fn getWorld() -> &'static mut World { &mut Window::getInstance().world }
 	pub fn getNetwork() -> &'static mut Network { &mut Window::getInstance().net }
 
-	pub fn getMousePos() -> glam::IVec2
+	pub fn getMousePos() -> glam::Vec2
 	{
 		let s = Window::getInstance().events.mouse_state();
-		glam::ivec2(s.x(), s.y())
+		glam::vec2(s.x(), s.y())
 	}
 
 	pub fn getVariable(name: String) -> super::Programmable::Variable
@@ -478,12 +480,12 @@ impl Window
 	{
 		let btn = match name.as_str()
 		{
-			"Left" => sdl2::mouse::MouseButton::Left,
-			"Right" => sdl2::mouse::MouseButton::Right,
-			"Middle" => sdl2::mouse::MouseButton::Middle,
-			"X1" => sdl2::mouse::MouseButton::X1,
-			"X2" => sdl2::mouse::MouseButton::X2,
-			_ => sdl2::mouse::MouseButton::Unknown
+			"Left" => sdl3::mouse::MouseButton::Left,
+			"Right" => sdl3::mouse::MouseButton::Right,
+			"Middle" => sdl3::mouse::MouseButton::Middle,
+			"X1" => sdl3::mouse::MouseButton::X1,
+			"X2" => sdl3::mouse::MouseButton::X2,
+			_ => sdl3::mouse::MouseButton::Unknown
 		};
 		Ok(Window::isMousePressed(btn))
 	}
@@ -494,12 +496,12 @@ impl Window
 		if e.is_none() { return Ok(false); }
 		let btn = match name.as_str()
 		{
-			"Left" => sdl2::mouse::MouseButton::Left,
-			"Right" => sdl2::mouse::MouseButton::Right,
-			"Middle" => sdl2::mouse::MouseButton::Middle,
-			"X1" => sdl2::mouse::MouseButton::X1,
-			"X2" => sdl2::mouse::MouseButton::X2,
-			_ => sdl2::mouse::MouseButton::Unknown
+			"Left" => sdl3::mouse::MouseButton::Left,
+			"Right" => sdl3::mouse::MouseButton::Right,
+			"Middle" => sdl3::mouse::MouseButton::Middle,
+			"X1" => sdl3::mouse::MouseButton::X1,
+			"X2" => sdl3::mouse::MouseButton::X2,
+			_ => sdl3::mouse::MouseButton::Unknown
 		};
 		Ok(e.unwrap().btn == btn && e.unwrap().clicks > 0)
 	}
@@ -529,12 +531,12 @@ impl Window
 		let e = Window::getKeyEvent();
 		if e.is_none() { return Ok(false); }
 		Ok(
-			(name == "LControl" && e.unwrap().mods.intersects(sdl2::keyboard::Mod::LCTRLMOD)) ||
-			(name == "RControl" && e.unwrap().mods.intersects(sdl2::keyboard::Mod::RCTRLMOD)) ||
-			(name == "LShift" && e.unwrap().mods.intersects(sdl2::keyboard::Mod::LSHIFTMOD)) ||
-			(name == "RShift" && e.unwrap().mods.intersects(sdl2::keyboard::Mod::RSHIFTMOD)) ||
-			(name == "LAlt" && e.unwrap().mods.intersects(sdl2::keyboard::Mod::LALTMOD)) ||
-			(name == "RAlt" && e.unwrap().mods.intersects(sdl2::keyboard::Mod::RALTMOD))
+			(name == "LControl" && e.unwrap().mods.intersects(sdl3::keyboard::Mod::LCTRLMOD)) ||
+			(name == "RControl" && e.unwrap().mods.intersects(sdl3::keyboard::Mod::RCTRLMOD)) ||
+			(name == "LShift" && e.unwrap().mods.intersects(sdl3::keyboard::Mod::LSHIFTMOD)) ||
+			(name == "RShift" && e.unwrap().mods.intersects(sdl3::keyboard::Mod::RSHIFTMOD)) ||
+			(name == "LAlt" && e.unwrap().mods.intersects(sdl3::keyboard::Mod::LALTMOD)) ||
+			(name == "RAlt" && e.unwrap().mods.intersects(sdl3::keyboard::Mod::RALTMOD))
 		)
 	}
 
@@ -546,7 +548,10 @@ impl Window
 		Ok(())
 	}
 
-	fn inputFN(_: &Lua, _: ()) -> Result<String, Error> { Ok(Window::getInstance().textInput.clone()) }
+	fn inputFN(_: &Lua, _: ()) -> Result<String, Error>
+	{
+		Ok(Window::getInstance().textInput.clone())
+	}
 
 	fn getClipboardFN(_: &Lua, _: ()) -> Result<String, Error>
 	{

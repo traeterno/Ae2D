@@ -1,4 +1,4 @@
-use mlua::{Error, Function, Integer, Lua, Number, StdLib};
+use mlua::{Error, Function, Lua, StdLib};
 
 use crate::ae2d::{Assets, Programmable::{Programmable, Variable}, Window::Window};
 
@@ -64,7 +64,7 @@ impl Image
 		img
 	}
 
-	pub fn getBounds(&mut self) -> sdl2::rect::FRect
+	pub fn getBounds(&mut self) -> sdl3::render::FRect
 	{
 		let size = self.animation.getFrameSize();
 		let p1 = self.ts.getMatrix() * glam::vec4(0.0, 0.0, 0.0, 1.0);
@@ -75,7 +75,7 @@ impl Image
 		let min = p1.min(p2).min(p3).min(p4);
 		let max = p1.max(p2).max(p3).max(p4);
 
-		sdl2::rect::FRect::new(min.x, min.y, max.x - min.x, max.y - min.y)
+		sdl3::render::FRect::new(min.x, min.y, max.x - min.x, max.y - min.y)
 	}
 
 	fn setPositionFN(_: &Lua, options: (f32, f32)) -> Result<(), Error>
@@ -92,12 +92,12 @@ impl Image
 		Ok(())
 	}
 
-	fn getPositionFN(_: &Lua, _: ()) -> Result<(Number, Number), Error>
+	fn getPositionFN(_: &Lua, _: ()) -> Result<(f32, f32), Error>
 	{
 		let obj = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() };
 		Ok((
-			obj.image.ts.getPosition().x as f64,
-			obj.image.ts.getPosition().y as f64
+			obj.image.ts.getPosition().x,
+			obj.image.ts.getPosition().y
 		))
 	}
 
@@ -115,10 +115,10 @@ impl Image
 		Ok(())
 	}
 
-	fn getRotationFN(_: &Lua, _: ()) -> Result<Number, Error>
+	fn getRotationFN(_: &Lua, _: ()) -> Result<f32, Error>
 	{
 		let obj = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() };
-		Ok(obj.image.ts.getRotation() as f64)
+		Ok(obj.image.ts.getRotation())
 	}
 
 	fn setScaleFN(_: &Lua, s: (f32, f32)) -> Result<(), Error>
@@ -135,12 +135,12 @@ impl Image
 		Ok(())
 	}
 
-	fn getScaleFN(_: &Lua, _: ()) -> Result<(Number, Number), Error>
+	fn getScaleFN(_: &Lua, _: ()) -> Result<(f32, f32), Error>
 	{
 		let obj = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() };
 		Ok((
-			obj.image.ts.getScale().x as f64,
-			obj.image.ts.getScale().y as f64
+			obj.image.ts.getScale().x,
+			obj.image.ts.getScale().y
 		))
 	}
 
@@ -151,30 +151,30 @@ impl Image
 		Ok(())
 	}
 
-	fn getOriginFN(_: &Lua, _: ()) -> Result<(Number, Number), Error>
+	fn getOriginFN(_: &Lua, _: ()) -> Result<(f32, f32), Error>
 	{
 		let obj = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() };
 		Ok((
-			obj.image.ts.getOrigin().x as f64,
-			obj.image.ts.getOrigin().y as f64
+			obj.image.ts.getOrigin().x,
+			obj.image.ts.getOrigin().y
 		))
 	}
 
-	fn boundsFN(_: &Lua, _: ()) -> Result<(Number, Number, Number, Number), Error>
+	fn boundsFN(_: &Lua, _: ()) -> Result<(f32, f32, f32, f32), Error>
 	{
 		let bounds = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() }.image.getBounds();
 		Ok((
-			bounds.left() as f64,
-			bounds.top() as f64,
-			bounds.width() as f64,
-			bounds.height() as f64
+			bounds.x,
+			bounds.y,
+			bounds.w,
+			bounds.h
 		))
 	}
 	
-	fn sizeFN(_: &Lua, _: ()) -> Result<(Number, Number), Error>
+	fn sizeFN(_: &Lua, _: ()) -> Result<(i32, i32), Error>
 	{
 		let size = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() }.image.animation.getFrameSize();
-		Ok((size.x as f64, size.y as f64))
+		Ok((size.x, size.y))
 	}
 
 	fn setAnimationFN(_: &Lua, name: String) -> Result<(), Error>
@@ -184,7 +184,7 @@ impl Image
 		Ok(())
 	}
 
-	fn setColorFN(_: &Lua, clr: (Integer, Integer, Integer, Integer)) -> Result<(), Error>
+	fn setColorFN(_: &Lua, clr: (u8, u8, u8, u8)) -> Result<(), Error>
 	{
 		let obj = &mut unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() }.image;
 		obj.color = glam::vec4(
@@ -248,16 +248,16 @@ impl Drawable for Image
 			let frame = self.animation.getCurrentFrame();
 			let size = self.animation.getFrameSize();
 			self.vertices = [
-				0.0, 0.0,						frame.left(), frame.top(),
+				0.0, 0.0,						frame.x, frame.y,
 				self.color.x, self.color.y, self.color.z, self.color.w,
 	
-				size.x as f32, 0.0,				frame.right(), frame.top(),
+				size.x as f32, 0.0,				frame.x + frame.w, frame.y,
 				self.color.x, self.color.y, self.color.z, self.color.w,
 				
-				size.x as f32, size.y as f32,	frame.right(), frame.bottom(),
+				size.x as f32, size.y as f32,	frame.x + frame.w, frame.y + frame.h,
 				self.color.x, self.color.y, self.color.z, self.color.w,
 				
-				0.0, size.y as f32,				frame.left(), frame.bottom(),
+				0.0, size.y as f32,				frame.x, frame.y + frame.h,
 				self.color.x, self.color.y, self.color.z, self.color.w
 			];
 		}
@@ -291,8 +291,8 @@ impl Drawable for Image
 #[derive(Clone, Debug)]
 pub struct Glyph
 {
-	pub rect: sdl2::rect::FRect,
-	pub offset: sdl2::rect::Point,
+	pub rect: sdl3::render::FRect,
+	pub offset: sdl3::rect::Point,
 	pub advance: u8,
 }
 
@@ -374,7 +374,7 @@ impl Font
 							.unwrap(),
 						Glyph
 						{
-							rect: sdl2::rect::FRect::new(
+							rect: sdl3::render::FRect::new(
 								ch.att_req("x")
 									.unwrap_or("0")
 									.parse::<f32>()
@@ -392,7 +392,7 @@ impl Font
 									.parse::<f32>()
 									.unwrap()
 							),
-							offset: sdl2::rect::Point::new(
+							offset: sdl3::rect::Point::new(
 								ch.att_req("xoffset")
 									.unwrap_or("0")
 									.parse::<i32>()
@@ -420,8 +420,8 @@ impl Font
 		let empty = Glyph
 		{
 			advance: 0,
-			offset: sdl2::rect::Point::new(0, 0),
-			rect: sdl2::rect::FRect::new(0.0, 0.0, 0.0, 0.0)
+			offset: sdl3::rect::Point::new(0, 0),
+			rect: sdl3::render::FRect::new(0.0, 0.0, 0.0, 0.0)
 		};
 
 		self.glyphs.get(&(c as u16)).unwrap_or_else(||
@@ -458,7 +458,7 @@ struct StyledText
 	pub underlined: bool,
 	pub strikethrough: bool,
 	pub newline: bool,
-	pub color: sdl2::pixels::Color,
+	pub color: sdl3::pixels::Color,
 }
 
 #[derive(Debug)]
@@ -529,7 +529,7 @@ impl Text
 			underlined: false,
 			strikethrough: false,
 			newline: false,
-			color: sdl2::pixels::Color::WHITE,
+			color: sdl3::pixels::Color::WHITE,
 		};
 
 		self.text.clear();
@@ -553,7 +553,7 @@ impl Text
 						underlined: false,
 						strikethrough: false,
 						newline: false,
-						color: sdl2::pixels::Color::WHITE,
+						color: sdl3::pixels::Color::WHITE,
 					};
 				}
 				let mut raw = String::new();
@@ -612,34 +612,34 @@ impl Text
 				vertices.append(&mut vec![
 					pos.x + (glyph.offset.x as f32 + if part.italic { italic } else { 0.0 }) * scale,
 					pos.y + (glyph.offset.y as f32 - self.font.base as f32) * scale,
-					glyph.rect.left() / self.font.bitmapSize.x as f32,
-					glyph.rect.top() / self.font.bitmapSize.y as f32,
+					glyph.rect.x / self.font.bitmapSize.x as f32,
+					glyph.rect.y / self.font.bitmapSize.y as f32,
 					clr.x, clr.y, clr.z, clr.w,
 	
-					pos.x + (glyph.offset.x as f32 + glyph.rect.width() + if part.italic { italic } else { 0.0 }) * scale,
+					pos.x + (glyph.offset.x as f32 + glyph.rect.w + if part.italic { italic } else { 0.0 }) * scale,
 					pos.y + (glyph.offset.y as f32 - self.font.base as f32) * scale,
-					glyph.rect.right() / self.font.bitmapSize.x as f32,
-					glyph.rect.top() / self.font.bitmapSize.y as f32,
+					(glyph.rect.x + glyph.rect.w) / self.font.bitmapSize.x as f32,
+					glyph.rect.y / self.font.bitmapSize.y as f32,
 					clr.x, clr.y, clr.z, clr.w,
 	
-					pos.x + (glyph.offset.x as f32 + glyph.rect.width()) * scale,
-					pos.y + (glyph.offset.y as f32 - self.font.base as f32 * scale + glyph.rect.height()) * scale,
-					glyph.rect.right() / self.font.bitmapSize.x as f32,
-					glyph.rect.bottom() / self.font.bitmapSize.y as f32,
+					pos.x + (glyph.offset.x as f32 + glyph.rect.w) * scale,
+					pos.y + (glyph.offset.y as f32 - self.font.base as f32 * scale + glyph.rect.h) * scale,
+					(glyph.rect.x + glyph.rect.w) / self.font.bitmapSize.x as f32,
+					(glyph.rect.y + glyph.rect.h) / self.font.bitmapSize.y as f32,
 					clr.x, clr.y, clr.z, clr.w,
 	
 					pos.x + (glyph.offset.x as f32) * scale,
-					pos.y + (glyph.offset.y as f32 - self.font.base as f32 * scale + glyph.rect.height()) * scale,
-					glyph.rect.left() / self.font.bitmapSize.x as f32,
-					glyph.rect.bottom() / self.font.bitmapSize.y as f32,
+					pos.y + (glyph.offset.y as f32 - self.font.base as f32 * scale + glyph.rect.h) * scale,
+					glyph.rect.x / self.font.bitmapSize.x as f32,
+					(glyph.rect.y + glyph.rect.h) / self.font.bitmapSize.y as f32,
 					clr.x, clr.y, clr.z, clr.w
 				]);
 
 				self.dimensions.x = self.dimensions.x.max(
-					pos.x + (glyph.offset.x as f32 + glyph.rect.width() + if part.italic { italic } else { 0.0 }) * scale
+					pos.x + (glyph.offset.x as f32 + glyph.rect.w + if part.italic { italic } else { 0.0 }) * scale
 				);
 				self.dimensions.y = self.dimensions.y.max(
-					pos.y + (glyph.offset.y as f32 - self.font.base as f32 * scale + glyph.rect.height()) * scale
+					pos.y + (glyph.offset.y as f32 - self.font.base as f32 * scale + glyph.rect.h) * scale
 				);
 
 				pos.x += glyph.advance as f32 * scale;
@@ -695,7 +695,7 @@ impl Text
 		self.reload = true;
 	}
 
-	pub fn getBounds(&mut self) -> sdl2::rect::FRect
+	pub fn getBounds(&mut self) -> sdl3::render::FRect
 	{
 		if self.reload { self.update(); }
 
@@ -707,7 +707,7 @@ impl Text
 		let min = p1.min(p2).min(p3).min(p4);
 		let max = p1.max(p2).max(p3).max(p4);
 
-		sdl2::rect::FRect::new(min.x, min.y, max.x - min.x, max.y - min.y)
+		sdl3::render::FRect::new(min.x, min.y, max.x - min.x, max.y - min.y)
 	}
 
 	pub fn getString(&mut self) -> String
@@ -742,12 +742,12 @@ impl Text
 		Ok(())
 	}
 
-	fn getPositionFN(_: &Lua, _: ()) -> Result<(Number, Number), Error>
+	fn getPositionFN(_: &Lua, _: ()) -> Result<(f32, f32), Error>
 	{
 		let obj = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() };
 		Ok((
-			obj.getText().ts.getPosition().x as f64,
-			obj.getText().ts.getPosition().y as f64
+			obj.getText().ts.getPosition().x,
+			obj.getText().ts.getPosition().y
 		))
 	}
 
@@ -765,10 +765,10 @@ impl Text
 		Ok(())
 	}
 
-	fn getRotationFN(_: &Lua, _: ()) -> Result<Number, Error>
+	fn getRotationFN(_: &Lua, _: ()) -> Result<f32, Error>
 	{
 		let obj = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() };
-		Ok(obj.getText().ts.getRotation() as f64)
+		Ok(obj.getText().ts.getRotation())
 	}
 
 	fn setScaleFN(_: &Lua, s: (f32, f32)) -> Result<(), Error>
@@ -785,12 +785,12 @@ impl Text
 		Ok(())
 	}
 
-	fn getScaleFN(_: &Lua, _: ()) -> Result<(Number, Number), Error>
+	fn getScaleFN(_: &Lua, _: ()) -> Result<(f32, f32), Error>
 	{
 		let obj = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() };
 		Ok((
-			obj.getText().ts.getScale().x as f64,
-			obj.getText().ts.getScale().y as f64
+			obj.getText().ts.getScale().x,
+			obj.getText().ts.getScale().y
 		))
 	}
 
@@ -801,30 +801,30 @@ impl Text
 		Ok(())
 	}
 
-	fn getOriginFN(_: &Lua, _: ()) -> Result<(Number, Number), Error>
+	fn getOriginFN(_: &Lua, _: ()) -> Result<(f32, f32), Error>
 	{
 		let obj = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() };
 		Ok((
-			obj.getText().ts.getOrigin().x as f64,
-			obj.getText().ts.getOrigin().y as f64
+			obj.getText().ts.getOrigin().x,
+			obj.getText().ts.getOrigin().y
 		))
 	}
 
-	fn boundsFN(_: &Lua, _: ()) -> Result<(Number, Number, Number, Number), Error>
+	fn boundsFN(_: &Lua, _: ()) -> Result<(f32, f32, f32, f32), Error>
 	{
 		let bounds = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() }.getText().getBounds();
 		Ok((
-			bounds.left() as f64,
-			bounds.top() as f64,
-			bounds.width() as f64,
-			bounds.height() as f64
+			bounds.x,
+			bounds.y,
+			bounds.w,
+			bounds.h
 		))
 	}
 	
-	fn sizeFN(_: &Lua, _: ()) -> Result<(Number, Number), Error>
+	fn sizeFN(_: &Lua, _: ()) -> Result<(f32, f32), Error>
 	{
 		let size = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() }.getText().getDimensions();
-		Ok((size.x as f64, size.y as f64))
+		Ok((size.x, size.y))
 	}
 
 	fn setStringFN(_: &Lua, txt: String) -> Result<(), Error>
@@ -933,10 +933,10 @@ impl Object
 		Ok(())
 	}
 	
-	fn getNumFN(_: &Lua, name: String) -> Result<Number, Error>
+	fn getNumFN(_: &Lua, name: String) -> Result<f32, Error>
 	{
 		let obj = unsafe { Window::getUI().scriptExecutor.as_mut().unwrap() };
-		Ok(obj.vars.get(&name).unwrap_or(&Variable::new()).num as f64)
+		Ok(obj.vars.get(&name).unwrap_or(&Variable::new()).num)
 	}
 	
 	fn setStrFN(_: &Lua, options: (String, String)) -> Result<(), Error>

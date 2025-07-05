@@ -17,9 +17,9 @@ gl = "0.14.0"
 glam = "0.29.2"
 spex = "0.2.2"
 stb_image = "0.3.0"
-sdl2 = "0.37.0"
 cpal = "0.16.0"
 json = "0.12.4"
+sdl3 = { version = "0.14.35" }
 
 [dependencies.mlua]
 version = "0.10.3"

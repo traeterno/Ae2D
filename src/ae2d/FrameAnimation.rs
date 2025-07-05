@@ -1,5 +1,3 @@
-use sdl2::rect::FRect;
-
 #[derive(Clone, Debug)]
 pub struct Frame
 {
@@ -85,7 +83,7 @@ pub struct Animator
 	frame: glam::IVec2,
 	animations: Vec<Animation>,
 	currentAnimation: usize,
-	frames: Vec<FRect>
+	frames: Vec<sdl3::render::FRect>
 }
 
 impl Animator
@@ -156,7 +154,7 @@ impl Animator
 		{
 			while x < self.size.x
 			{
-				self.frames.push(sdl2::rect::FRect::new(
+				self.frames.push(sdl3::render::FRect::new(
 					x as f32 / self.size.x as f32,
 					y as f32 / self.size.y as f32,
 					self.frame.x as f32 / self.size.x as f32,
@@ -169,10 +167,10 @@ impl Animator
 		}
 	}
 
-	pub fn getCurrentFrame(&mut self) -> sdl2::rect::FRect
+	pub fn getCurrentFrame(&mut self) -> sdl3::render::FRect
 	{
-		if self.frames.len() == 0 { return sdl2::rect::FRect::new(0.0 ,0.0, 0.0, 0.0); }
-		if self.animations.len() == 0 { return sdl2::rect::FRect::new(0.0, 0.0, 0.0, 0.0); }
+		if self.frames.len() == 0 { return sdl3::render::FRect::new(0.0 ,0.0, 0.0, 0.0); }
+		if self.animations.len() == 0 { return sdl3::render::FRect::new(0.0, 0.0, 0.0, 0.0); }
 		self.frames[self.animations[self.currentAnimation].getCurrentFrame() as usize]
 	}
 
