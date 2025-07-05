@@ -1038,7 +1038,7 @@ impl Object
 	fn luaError(&mut self, res: Result<(), Error>)
 	{
 		if res.is_ok() { return; }
-		println!("Object: {}\n{:?}\n", self.name, res.unwrap_err());
+		println!("Object: {}\n{}\n", self.name, res.unwrap_err());
 	}
 
 	pub fn draw(&mut self)

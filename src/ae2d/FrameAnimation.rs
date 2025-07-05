@@ -33,19 +33,6 @@ impl Animation
 		}
 	}
 
-	pub fn oneFrame(name: String, id: u8) -> Self
-	{
-		Self
-		{
-			name,
-			repeat: 0,
-			repeated: 0,
-			frames: vec![Frame { duration: 0.0, id }],
-			currentFrame: 0,
-			currentTime: 0.0
-		}
-	}
-
 	pub fn parse(base: &spex::xml::Element) -> Self
 	{
 		let mut anim = Animation::new();
@@ -142,13 +129,6 @@ impl Animator
 		{
 			self.animations.push(Animation::parse(node));
 		}
-	}
-
-	pub fn fromFile(path: String) -> Self
-	{
-		let mut anim = Animator::new();
-		anim.load(path);
-		anim
 	}
 
 	pub fn bindTexture(&mut self)

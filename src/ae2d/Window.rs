@@ -431,11 +431,6 @@ impl Window
 		Window::getInstance().lockCursor = lock;
 	}
 
-	pub fn getInput() -> String
-	{
-		Window::getInstance().textInput.clone()
-	}
-
 	fn sizeFN(_: &Lua, _: ()) -> Result<(Integer, Integer), Error>
 	{
 		Ok((Window::getSize().x as i64, Window::getSize().y as i64))

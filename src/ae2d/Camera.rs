@@ -7,7 +7,6 @@ pub trait Drawable
 
 pub struct Camera
 {
-	pos: glam::Vec2,
 	imgShader: Shader,
 	txtShader: Shader,
 	shapeShader: Shader,
@@ -23,7 +22,6 @@ impl Camera
 	{
 		Self
 		{
-			pos: glam::Vec2::ZERO,
 			imgShader: Shader::new(),
 			txtShader: Shader::new(),
 			shapeShader: Shader::new(),
