@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use mlua::Lua;
+use mlua::{Function, Lua, Value};
 
 use super::{bind, Camera::Drawable, Sprite::Sprite, Text::Text, Window::Window};
 
@@ -118,7 +118,8 @@ impl Object
 pub struct UI
 {
 	baseSize: glam::Vec2,
-	objects: HashMap<String, Object>
+	objects: HashMap<String, Object>,
+	reload: String
 }
 
 impl UI
@@ -128,7 +129,8 @@ impl UI
 		Self
 		{
 			baseSize: glam::Vec2::ZERO,
-			objects: HashMap::new()
+			objects: HashMap::new(),
+			reload: String::new()
 		}
 	}
 
@@ -184,6 +186,11 @@ impl UI
 
 	pub fn update(&mut self)
 	{
+		if !self.reload.is_empty()
+		{
+			self.load(self.reload.clone());
+			self.reload.clear();
+		}
 		for (name, obj) in &self.objects
 		{
 			if let Ok(f) = obj.script.globals()
@@ -200,6 +207,24 @@ impl UI
 			}
 		}
 	}
+
+	pub fn requestLoad(&mut self, path: String)
+	{
+		self.reload = path;
+	}
+
+	pub fn resize(&mut self, w: i32, h: i32)
+	{
+		for (_, obj) in &self.objects
+		{
+			if let Ok(f) = obj.script.globals().get::<Function>("OnResized")
+			{
+				let _ = f.call::<Value>((w, h));
+			}
+		}
+	}
+	
+	pub fn getSize(&self) -> glam::Vec2 { self.baseSize }
 }
 
 impl Drawable for UI

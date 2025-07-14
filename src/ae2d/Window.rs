@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use glfw::Context;
 use mlua::{Error, Lua};
 
+use crate::ae2d::{bind, Network::Network};
+
 use super::{Camera::Camera, Programmable::{Programmable, Variable}, UI::UI};
 
 pub struct Window
@@ -17,7 +19,8 @@ pub struct Window
 	keyEvent: Option<(glfw::Key, glfw::Action, glfw::Modifiers)>,
 	cam: Camera,
 	textures: HashMap<String, u32>,
-	ui: UI
+	ui: UI,
+	net: Network
 }
 
 impl Window
@@ -38,7 +41,8 @@ impl Window
 			keyEvent: None,
 			cam: Camera::new(),
 			textures: HashMap::new(),
-			ui: UI::new()
+			ui: UI::new(),
+			net: Network::new()
 		}
 	}
 
@@ -194,6 +198,7 @@ impl Window
 				glfw::WindowEvent::Size(w, h) =>
 				{
 					i.cam.setSize((w, h));
+					i.ui.resize(w, h);
 					unsafe
 					{
 						gl::Viewport(0, 0, w, h);
@@ -360,9 +365,23 @@ impl Window
 		let _ = table.set("keyJustPressed", script.create_function(Window::keyJustPressedFN).unwrap());
 		let _ = table.set("execute", script.create_function(Window::executeFN).unwrap());
 
+		let _ = table.set("loadUI",
+		script.create_function(|_, path: String|
+		{
+			Window::getUI().requestLoad(path);
+			Ok(())
+		}).unwrap());
+
+		let _ = table.set("uiSize",
+		script.create_function(|_, _: ()|
+		{
+			let s = Window::getUI().getSize();
+			Ok((s.x, s.y))
+		}).unwrap());
+
 		let _ = script.globals().set("window", table);
 
-		// Network::initLua(script);
+		bind::network(script);
 	}
 
 	fn strToMB(name: String) -> glfw::MouseButton
@@ -471,5 +490,10 @@ impl Window
 			},
 			_ => 0
 		}
+	}
+
+	pub fn getNetwork() -> &'static mut Network
+	{
+		&mut Window::getInstance().net
 	}
 }

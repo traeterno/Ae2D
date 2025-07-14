@@ -1,4 +1,8 @@
-use mlua::Lua;
+use std::{io::Write, net::{TcpStream, UdpSocket}};
+
+use mlua::{Lua, Table};
+
+use crate::{ae2d::Network::Network, server::Transmission::ClientMessage};
 
 use super::{Sprite::Sprite, Text::Text, Window::Window};
 
@@ -276,4 +280,148 @@ pub fn text(s: &Lua)
 	}).unwrap());
 
 	let _ = s.globals().set("text", t);
+}
+
+pub fn network(s: &Lua)
+{
+	let t = s.create_table().unwrap();
+
+	let _ = t.raw_set("name",
+	s.create_function(|_, _: ()|
+	{
+		Ok(Window::getNetwork().name.clone())
+	}).unwrap());
+
+	let _ = t.raw_set("id",
+	s.create_function(|_, _: ()|
+	{
+		Ok(Window::getNetwork().id.clone())
+	}).unwrap());
+
+	let _ = t.raw_set("class",
+	s.create_function(|_, _: ()|
+	{
+		Ok(Window::getNetwork().class.clone())
+	}).unwrap());
+
+	let _ = t.raw_set("connect",
+	s.create_function(|_, addr: String|
+	{
+		let net = Window::getNetwork();
+
+		let tcp = TcpStream::connect(addr);
+		if tcp.is_err()
+		{
+			println!("TCP failed: {}", tcp.unwrap_err());
+			return Ok(false);
+		}
+		let tcp = tcp.unwrap();
+		let _ = tcp.set_nonblocking(true);
+
+		let udp = UdpSocket::bind("0.0.0.0:0");
+		if udp.is_err()
+		{
+			println!("UDP failed: {}", udp.unwrap_err());
+			return Ok(false);
+		}
+		let udp = udp.unwrap();
+		let _ = udp.set_nonblocking(true);
+
+		net.tcp = Some(tcp);
+		net.udp = Some(udp);
+		std::thread::spawn(Network::tcpThread);
+		Ok(true)
+	}).unwrap());
+
+	let _ = t.raw_set("login",
+	s.create_function(|_, data: (u8, String, String)|
+	{
+		let net = Window::getNetwork();
+		net.id = data.0;
+		net.name = data.1;
+		net.class = data.2;
+		std::thread::spawn(Network::updateThread);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("getState",
+	s.create_function(|_, id: u8|
+	{
+		if id == 0
+		{
+			return Ok((
+				0.0, 0.0, 0.0, 0.0,
+				0, false, false, false
+			));
+		}
+
+		let net = Window::getNetwork();
+		let s = net.state[(id - 1) as usize];
+		Ok((
+			s.pos.0, s.pos.1, s.vel.0, s.vel.1,
+			s.moveX, s.jump, s.attack, s.protect
+		))
+	}).unwrap());
+
+	let _ = t.raw_set("hasMessage",
+	s.create_function(|_, id: u8|
+	{
+		for msg in &Window::getNetwork().tcpHistory
+		{
+			match msg
+			{
+				ClientMessage::Login(..) => if id == 1 { return Ok(true); }
+				ClientMessage::Disconnected(..) => if id == 2 { return Ok(true); }
+				ClientMessage::Chat(..) => if id == 3 { return Ok(true); }
+				ClientMessage::SetPosition(..) => if id == 4 { return Ok(true); }
+				ClientMessage::GetInfo(..) => if id == 5 { return Ok(true); }
+			}
+		}
+		Ok(false)
+	}).unwrap());
+
+	let _ = t.raw_set("getMessage",
+	s.create_function(|s, msg: u8|
+	{
+		let t = s.create_table().unwrap();
+		let net = Window::getNetwork();
+
+		for i in 0..net.tcpHistory.len()
+		{
+			let mut found = false;
+			match &net.tcpHistory[i]
+			{
+				ClientMessage::Login(id, name, class) =>
+				{
+					if msg != 1 { continue; }
+					let _ = t.raw_set("id", *id);
+					let _ = t.raw_set("name", name.clone());
+					let _ = t.raw_set("class", class.to_string());
+					found = true;
+				}
+				_ => {}
+			}
+			if found { net.tcpHistory.swap_remove(i); break; }
+		}
+		
+		Ok(t)
+	}).unwrap());
+
+	let _ = t.raw_set("sendMessage",
+	s.create_function(|_, x: (u8, Table)|
+	{
+		let tcp = Window::getNetwork().tcp.as_mut().unwrap();
+		let _ = tcp.write(&match x.0
+		{
+			1 =>
+			{
+				let name: String = x.1.get("name").unwrap();
+				[&[1u8], name.as_bytes()].concat()
+			},
+			_ => vec![]
+		});
+		Ok(())
+	}).unwrap());
+
+	let _ = s.globals().set("network", t);
 }

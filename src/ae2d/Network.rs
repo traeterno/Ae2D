@@ -1,6 +1,6 @@
-use std::{io::{ErrorKind, Read, Write}, net::{TcpStream, UdpSocket}, time::{Duration, Instant}};
+use std::{io::{ErrorKind, Read}, net::{TcpStream, UdpSocket}, time::{Duration, Instant}};
 
-use mlua::{Error, Lua, Table};
+use mlua::{Error, Lua};
 
 use crate::server::Transmission::ClientMessage;
 
@@ -12,14 +12,14 @@ struct SavedState
 }
 
 #[derive(Clone, Copy, Debug)]
-struct PlayerState
+pub struct PlayerState
 {
-	pos: (f32, f32),
-	vel: (f32, f32),
-	moveX: i8,
-	jump: bool,
-	attack: bool,
-	protect: bool
+	pub pos: (f32, f32),
+	pub vel: (f32, f32),
+	pub moveX: i8,
+	pub jump: bool,
+	pub attack: bool,
+	pub protect: bool
 }
 
 impl PlayerState
@@ -76,17 +76,17 @@ impl PlayerState
 
 pub struct Network
 {
-	tcp: Option<TcpStream>,
-	udp: Option<UdpSocket>,
-	name: String,
-	class: String,
-	id: u8,
+	pub tcp: Option<TcpStream>,
+	pub udp: Option<UdpSocket>,
+	pub name: String,
+	pub class: String,
+	pub id: u8,
 	tickRate: u8,
 	tickTime: Duration,
 	mainState: PlayerState,
-	state: Vec<PlayerState>,
+	pub state: Vec<PlayerState>,
 	save: SavedState,
-	tcpHistory: Vec<ClientMessage>
+	pub tcpHistory: Vec<ClientMessage>
 }
 
 impl Network
@@ -107,54 +107,6 @@ impl Network
 			save: SavedState { checkpoint: String::new() },
 			tcpHistory: vec![]
 		}
-	}
-
-	pub fn initLua(script: &Lua)
-	{
-		let table = script.create_table().unwrap();
-
-		table.set("name", script.create_function(Network::name).unwrap());
-		table.set("id", script.create_function(Network::id).unwrap());
-		table.set("class", script.create_function(Network::class).unwrap());
-		table.set("connect", script.create_function(Network::connect).unwrap());
-		table.set("login", script.create_function(Network::login).unwrap());
-		table.set("getState", script.create_function(Network::getState).unwrap());
-		table.set("hasMessage", script.create_function(Network::hasMessage).unwrap());
-		table.set("getMessage", script.create_function(Network::getMessage).unwrap());
-		table.set("sendMessage", script.create_function(Network::sendMessage).unwrap());
-
-		script.globals().set("network", table);
-	}
-
-	fn name(_: &Lua, _: ()) -> Result<String, Error> { Ok(Window::getNetwork().name.clone()) }
-	fn id(_: &Lua, _: ()) -> Result<u8, Error> { Ok(Window::getNetwork().id) }
-	fn class(_: &Lua, _: ()) -> Result<String, Error> { Ok(Window::getNetwork().class.clone()) }
-
-	fn connect(_: &Lua, addr: String) -> Result<bool, Error>
-	{
-		let net = Window::getNetwork();
-		let tcp = TcpStream::connect(addr);
-		if tcp.is_err()
-		{
-			println!("Failed to connect TCP: {:?}", tcp.unwrap_err());
-			return Ok(false);
-		}
-		let tcp = tcp.unwrap();
-		tcp.set_nonblocking(true);
-		
-		let udp = UdpSocket::bind("0.0.0.0:0");
-		if udp.is_err()
-		{
-			println!("Failed to bind UDP: {:?}", udp.unwrap_err());
-			return Ok(false);
-		}
-		let udp = udp.unwrap();
-		udp.set_nonblocking(true);
-
-		net.tcp = Some(tcp);
-		net.udp = Some(udp);
-		std::thread::spawn(Network::tcpThread);
-		Ok(true)
 	}
 
 	fn login(_: &Lua, data: (u8, String, String)) -> Result<(), Error>
@@ -188,83 +140,6 @@ impl Network
 
 		std::thread::spawn(Network::updateThread);
 		
-		Ok(())
-	}
-
-	fn getState(_: &Lua, id: u8) -> Result<(f32, f32, f32, f32, i8, bool, bool, bool), Error>
-	{
-		if id == 0
-		{
-			return Ok((
-				0.0, 0.0, 0.0, 0.0,
-				0, false, false, false
-			))
-		}
-
-		let net = Window::getNetwork();
-		let s = net.state[(id - 1) as usize];
-		Ok((
-			s.pos.0, s.pos.1, s.vel.0, s.vel.1,
-			s.moveX, s.jump, s.attack, s.protect
-		))
-	}
-
-	fn hasMessage(_: &Lua, id: u8) -> Result<bool, Error>
-	{
-		for msg in &Window::getNetwork().tcpHistory
-		{
-			match msg
-			{
-				ClientMessage::Login(..) => if id == 1 { return Ok(true); }
-				ClientMessage::Disconnected(..) => if id == 2 { return Ok(true); }
-				ClientMessage::Chat(..) => if id == 3 { return Ok(true); }
-				ClientMessage::SetPosition(..) => if id == 4 { return Ok(true); }
-				ClientMessage::GetInfo(..) => if id == 5 { return Ok(true); }
-			}
-		}
-		Ok(false)
-	}
-
-	fn getMessage(script: &Lua, msg: u8) -> Result<Table, Error>
-	{
-		let table = script.create_table().unwrap();
-
-		let net = Window::getNetwork();
-
-		for i in 0..net.tcpHistory.len()
-		{
-			let mut found = false;
-			match &net.tcpHistory[i]
-			{
-				ClientMessage::Login(id, name, class) =>
-				{
-					if msg != 1 { continue; }
-					table.raw_set("id", *id);
-					table.raw_set("name", name.clone());
-					table.raw_set("class", class.clone());
-					found = true;
-				},
-				_ => {}
-			}
-			if found { net.tcpHistory.swap_remove(i); break; }
-		}
-
-		Ok(table)
-	}
-
-	fn sendMessage(_: &Lua, (msg, data): (u8, Table)) -> Result<(), Error>
-	{
-		let net = Window::getNetwork();
-		let tcp = net.tcp.as_mut().unwrap();
-		tcp.write(&match msg
-		{
-			1 =>
-			{
-				let name: String = data.get("name").unwrap();
-				[&[1u8], name.as_bytes()].concat()
-			}
-			_ => vec![]
-		});
 		Ok(())
 	}
 
@@ -317,7 +192,7 @@ impl Network
 			}
 
 			let udp = net.udp.as_mut().unwrap();
-			udp.send(&net.mainState.raw(net.id));
+			let _ = udp.send(&net.mainState.raw(net.id));
 
 			timer = Instant::now();
 		}

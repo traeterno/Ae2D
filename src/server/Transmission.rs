@@ -43,7 +43,7 @@ pub enum ClientMessage
 	Disconnected(u8),
 	Chat(String),
 	SetPosition(u16, u16),
-	// GetInfo(u16, u8, String, u8)
+	GetInfo(u16, u8, String, u8)
 }
 
 impl ClientMessage
@@ -63,10 +63,10 @@ impl ClientMessage
 			Self::SetPosition(x, y) => [&[4u8] as &[u8],
 					&x.to_le_bytes(), &y.to_le_bytes()
 				].concat().to_vec(),
-			// Self::GetInfo(udp, tickRate, checkpoint, playersCount) => [
-			// 		&[5u8] as &[u8], &udp.to_le_bytes(), &[tickRate],
-			// 		&[playersCount], checkpoint.as_bytes()
-			// 	].concat().to_vec()
+			Self::GetInfo(udp, tickRate, checkpoint, playersCount) => [
+					&[5u8] as &[u8], &udp.to_le_bytes(), &[tickRate],
+					&[playersCount], checkpoint.as_bytes()
+				].concat().to_vec()
 		}
 	}
 }

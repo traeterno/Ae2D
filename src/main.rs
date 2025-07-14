@@ -1,6 +1,6 @@
 #![allow(non_snake_case, static_mut_refs)]
 mod ae2d;
-// mod server;
+mod server;
 
 use ae2d::Window::Window;
 
