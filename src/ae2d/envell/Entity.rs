@@ -1,10 +1,10 @@
 use mlua::{Error, Function, Lua, Value};
 
-use crate::ae2d::{Assets, Camera::Drawable, Programmable::{Programmable, Variable}, Window::Window};
+use crate::ae2d::{Sprite::Sprite, Camera::Drawable, Programmable::{Programmable, Variable}, Window::Window};
 
-use super::{AnimatedSprite::AnimatedSprite, Physics::Rigidbody, World::World};
+use super::{Physics::Rigidbody, World::World};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Entity
 {
 	id: String,
@@ -13,7 +13,7 @@ pub struct Entity
 	group: String,
 	script: Lua,
 	rb: Rigidbody,
-	drawable: Vec<AnimatedSprite>,
+	drawable: Vec<Sprite>,
 	prePhysicsFN: Option<Function>,
 	onCollidedFN: Option<Function>,
 	midPhysicsFN: Option<Function>,
@@ -41,31 +41,28 @@ impl Entity
 			drawFN: None
 		}
 	}
-	pub fn load(path: String) -> Self
+	pub fn load(id: &str, path: &str) -> Self
 	{
 		let mut ent = Self::new();
 
-		let doc = Assets::readXML(path);
-		if doc.is_none() { return Self::new(); }
-		let doc = doc.unwrap();
+		ent.id = id.to_string();
 
-		for element in doc.elements()
+		let src = json::parse(
+			&std::fs::read_to_string(path)
+			.unwrap_or(String::new())
+		);
+		if src.is_err() { return ent; }
+		let src = src.unwrap();
+
+		for (name, value) in src.entries()
 		{
-			let name = element.name().local_part();
-			if name == "name"
-			{
-				ent.name = element.text().unwrap_or("").to_string();
-			}
-			if name == "group"
-			{
-				ent.group = element.text().unwrap_or("").to_string();
-			}
+			if name == "name" { ent.name = value.as_str().unwrap().to_string(); }
+			if name == "group" { ent.group = value.as_str().unwrap().to_string(); }
 			if name == "script"
 			{
-				ent.script.load(
-					Assets::readFile(
-						element.text().unwrap_or("").to_string()
-					).unwrap_or(String::new()).to_string()
+				let _ = ent.script.load(
+					std::fs::read_to_string(value.as_str().unwrap().to_string())
+					.unwrap_or(String::new())
 				).exec();
 			}
 		}
@@ -83,14 +80,13 @@ impl Entity
 		}
 
 		self.initLua();
-		AnimatedSprite::initLua(&self.script);
 		Window::initLua(&self.script);
 		World::initLua(&self.script);
 		Rigidbody::initLua(&self.script);
 
 		match self.script.globals().get::<Function>("Init")
 		{
-			Ok(func) => { func.call::<Value>(()); }
+			Ok(func) => { let _ = func.call::<Value>(()); }
 			Err(_) => { println!("Entity: {}\n'Init' function not found", self.id); }
 		}
 		match self.script.globals().get::<Function>("PrePhysics")
@@ -124,16 +120,16 @@ impl Entity
 	{
 		let table = self.script.create_table().unwrap();
 
-		table.set("getNum", self.script.create_function(Entity::getNumFN).unwrap());
-		table.set("getStr", self.script.create_function(Entity::getStrFN).unwrap());
-		table.set("setNum", self.script.create_function(Entity::setNumFN).unwrap());
-		table.set("setStr", self.script.create_function(Entity::setStrFN).unwrap());
-		table.set("getName", self.script.create_function(Entity::getNameFN).unwrap());
-		table.set("setName", self.script.create_function(Entity::setNameFN).unwrap());
-		table.set("id", self.script.create_function(Entity::idFN).unwrap());
-		table.set("createSprite", self.script.create_function(Entity::createSprite).unwrap());
+		let _ = table.raw_set("getNum", self.script.create_function(Entity::getNumFN).unwrap());
+		let _ = table.raw_set("getStr", self.script.create_function(Entity::getStrFN).unwrap());
+		let _ = table.raw_set("setNum", self.script.create_function(Entity::setNumFN).unwrap());
+		let _ = table.raw_set("setStr", self.script.create_function(Entity::setStrFN).unwrap());
+		let _ = table.raw_set("getName", self.script.create_function(Entity::getNameFN).unwrap());
+		let _ = table.raw_set("setName", self.script.create_function(Entity::setNameFN).unwrap());
+		let _ = table.raw_set("id", self.script.create_function(Entity::idFN).unwrap());
+		let _ = table.raw_set("createSprite", self.script.create_function(Entity::createSprite).unwrap());
 
-		self.script.globals().set("entity", table);
+		let _ = self.script.globals().set("entity", table);
 	}
 
 	pub fn setNumFN(_: &Lua, args: (String, f32)) -> Result<(), Error>
@@ -189,13 +185,11 @@ impl Entity
 	pub fn createSprite(_: &Lua, path: String) -> Result<i32, Error>
 	{
 		let ent = Window::getWorld().getCurrentEntity();
-		let mut spr = AnimatedSprite::new();
-		spr.loadAnimator(path);
-		ent.drawable.push(spr);
+		ent.drawable.push(Sprite::new(path));
 		Ok((ent.drawable.len() - 1) as i32)
 	}
 
-	pub fn getSprite(&mut self, id: usize) -> &mut AnimatedSprite
+	pub fn getSprite(&mut self, id: usize) -> &mut Sprite
 	{
 		self.drawable.get_mut(id).unwrap()
 	}
@@ -234,6 +228,16 @@ impl Entity
 		{
 			f.call::<Value>(());
 		}
+	}
+
+	pub fn setAnimFN(_: &Lua, data: (usize, String)) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite(data.0).setAnimation(data.1); Ok(())
+	}
+	
+	pub fn drawFN(_: &Lua, id: usize) -> Result<(), Error>
+	{
+		Window::getWorld().getCurrentEntity().getSprite(id).draw(); Ok(())
 	}
 
 	pub fn execute(&mut self, cmd: String)

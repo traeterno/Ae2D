@@ -3,3 +3,4 @@ tutor.md
 res/
 target/
 Cargo.lock
+docs.sh

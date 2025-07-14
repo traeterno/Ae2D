@@ -1,7 +1,6 @@
-use glam::Vec4Swizzles;
 use mlua::{Error, Lua, Table};
 
-use crate::ae2d::{Shapes::Rectangle, Window::Window};
+use crate::ae2d::Window::Window;
 
 #[derive(Clone, Debug)]
 pub struct Rigidbody
@@ -50,7 +49,6 @@ impl Rigidbody
 
 		t.set("setHitbox", script.create_function(Rigidbody::setHitbox).unwrap());
 		t.set("setPosition", script.create_function(Rigidbody::setPosition).unwrap());
-		t.set("draw", script.create_function(Rigidbody::draw).unwrap());
 
 		script.globals().raw_set("physics", t);
 	}
@@ -86,23 +84,6 @@ impl Rigidbody
 	{
 		let rb = Window::getWorld().getCurrentEntity().getRB();
 		rb.pos = glam::vec2(pos.0, pos.1);
-		Ok(())
-	}
-
-	pub fn draw(_: &Lua, clr: (u8, u8, u8, u8)) -> Result<(), Error>
-	{
-		let mut obj = Rectangle::new();
-		let h = Window::getWorld().getCurrentEntity().getRB().getHitbox();
-		obj.setColor(glam::vec4(
-			clr.0 as f32 / 255.0,
-			clr.1 as f32 / 255.0,
-			clr.2 as f32 / 255.0,
-			clr.3 as f32 / 255.0
-		));
-		obj.setSize(h.zw());
-		obj.getTransform().setPosition(h.xy());
-		
-		Window::getCamera().draw(&mut obj);
 		Ok(())
 	}
 }

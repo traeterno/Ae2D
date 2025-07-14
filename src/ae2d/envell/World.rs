@@ -2,7 +2,7 @@ use std::ptr::null;
 
 use mlua::{Error, Function, Lua, StdLib, Value::{self}};
 
-use crate::ae2d::{Assets, Camera::Drawable, Network::Network, Programmable::{Programmable, Variable}, Window::Window};
+use crate::ae2d::{Camera::Drawable, Network::Network, Programmable::{Programmable, Variable}, Window::Window};
 
 use super::Entity::Entity;
 
@@ -12,7 +12,6 @@ pub struct World
 	script: Lua,
 	currentEnt: *mut Entity,
 	updateFN: Option<Function>,
-	postUpdateFN: Option<Function>,
 	pub prog: Programmable
 }
 
@@ -26,7 +25,6 @@ impl World
 			script: Lua::new(),
 			currentEnt: null::<Entity>() as *mut _,
 			updateFN: None,
-			postUpdateFN: None,
 			prog: Programmable::new()
 		};
 		
@@ -51,66 +49,88 @@ impl World
 
 	pub fn load(&mut self, path: String)
 	{
+		let src = json::parse(
+			&std::fs::read_to_string(path)
+			.unwrap_or(String::new())
+		);
+		if src.is_err() { return; }
+		let src = src.unwrap();
+
 		self.ents.clear();
 
-		let doc = Assets::readXML(path);
-		if doc.is_none() { return; }
-		let doc = doc.unwrap();
-
-		self.script.load(Assets::readFile(
-			doc.att_opt("script")
-			.unwrap_or("")
-			.to_string()
-		).unwrap()).exec();
-
+		for (var, value) in src.entries()
+		{
+			if var == "script"
+			{
+				self.script.load(
+					std::fs::read_to_string(value.as_str().unwrap())
+					.unwrap()
+				).exec();
+			}
+			if var == "entities"
+			{
+				for (id, file) in value.entries()
+				{
+					self.ents.push(
+						Entity::load(id, file.as_str().unwrap())
+					);
+				}
+			}
+		}
+				
 		if let Ok(func) = self.script.globals().get::<Function>("Init")
 		{
 			func.call::<Value>(());
 		}
 
-		for el in doc.elements()
-		{
-			if el.name().local_part() == "entity"
-			{
-				let mut ent = Entity::load(
-					el.att_opt("path").unwrap_or("").to_string()
-				);
+		// let doc = Assets::readXML(path);
+		// if doc.is_none() { return; }
+		// let doc = doc.unwrap();
 
-				let mut prog = Programmable::new();
-				for var in el.elements()
-				{
-					if var.name().local_part() == "var"
-					{
-						prog.insert(
-							var.att_opt("name").unwrap_or("").to_string(),
-							Variable
-							{
-								num: var.att_opt("num").unwrap_or("0").parse().unwrap(),
-								string: var.att_opt("str").unwrap_or("").to_string()
-							}
-						);
-					}
-				}
+		// self.script.load(Assets::readFile(
+		// 	doc.att_opt("script")
+		// 	.unwrap_or("")
+		// 	.to_string()
+		// ).unwrap()).exec();
 
-				self.currentEnt = &mut ent;
+		// for el in doc.elements()
+		// {
+		// 	if el.name().local_part() == "entity"
+		// 	{
+		// 		let mut ent = Entity::load(
+		// 			el.att_opt("path").unwrap_or("").to_string()
+		// 		);
 
-				ent.init(
-					el.att_opt("id").unwrap_or("").to_string(),
-					prog
-				);
+		// 		let mut prog = Programmable::new();
+		// 		for var in el.elements()
+		// 		{
+		// 			if var.name().local_part() == "var"
+		// 			{
+		// 				prog.insert(
+		// 					var.att_opt("name").unwrap_or("").to_string(),
+		// 					Variable
+		// 					{
+		// 						num: var.att_opt("num").unwrap_or("0").parse().unwrap(),
+		// 						string: var.att_opt("str").unwrap_or("").to_string()
+		// 					}
+		// 				);
+		// 			}
+		// 		}
 
-				self.ents.push(ent);
-			}
-		}
+		// 		self.currentEnt = &mut ent;
+
+		// 		ent.init(
+		// 			el.att_opt("id").unwrap_or("").to_string(),
+		// 			prog
+		// 		);
+
+		// 		self.ents.push(ent);
+		// 	}
+		// }
 
 		if let Ok(func) = self.script.globals().get::<Function>("Update")
 		{
 			self.updateFN = Some(func);
-		}
-
-		if let Ok(func) = self.script.globals().get::<Function>("PostUpdate")
-		{
-			self.postUpdateFN = Some(func);
 		}
 	}
 
@@ -154,11 +174,6 @@ impl World
 		{
 			self.currentEnt = ent;
 			ent.postPhysics();
-		}
-
-		if let Some(func) = &self.postUpdateFN
-		{
-			func.call::<Value>(());
 		}
 	}
 

@@ -82,14 +82,13 @@ impl Drawable for Rectangle
 
 		let shader = Window::getCamera().getShapeShader();
 		shader.activate();
-		shader.setMat4("model", &self.ts.getMatrix().to_cols_array());
-		shader.setVec4("clr", self.color.to_array());
+		shader.setMat4("model", self.ts.getMatrix());
+		shader.setVec4("clr", self.color);
 		unsafe
 		{
 			gl::BindVertexArray(self.vao);
 			gl::DrawArrays(gl::QUADS, 0, 4);
 			gl::BindVertexArray(0);
 		}
-		shader.setInt("layer", shader.getInt("layer") + 1);
 	}
 }

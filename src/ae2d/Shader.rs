@@ -21,14 +21,14 @@ impl Shader
 
 	fn compile(p: &str, t: gl::types::GLenum) -> u32
 	{
-		let res = crate::ae2d::Assets::readFile(p.to_string());
-		if res.is_none()
+		let res = std::fs::read_to_string(p).unwrap_or(String::new());
+		if res.is_empty()
 		{
 			println!("Failed to load shader from {p}");
 			return 0;
 		}
 
-		let code = std::ffi::CString::new(res.unwrap()).unwrap();
+		let code = std::ffi::CString::new(res).unwrap();
 
 		unsafe
 		{
@@ -107,20 +107,14 @@ impl Shader
 		let cn = CString::new(name).unwrap();
 		unsafe
 		{
-			gl::Uniform1i(gl::GetUniformLocation(self.program, cn.as_ptr()), value);
+			gl::Uniform1i(
+				gl::GetUniformLocation(self.program, cn.as_ptr()),
+				value
+			);
 		}
 	}
 
-	pub fn setFloat(&mut self, name: &str, value: f32)
-	{
-		let cn = CString::new(name).unwrap();
-		unsafe
-		{
-			gl::Uniform1f(gl::GetUniformLocation(self.program, cn.as_ptr()), value);
-		}
-	}
-
-	pub fn setMat4(&mut self, name: &str, value: &[f32; 16])
+	pub fn setMat4(&mut self, name: &str, value: glam::Mat4)
 	{
 		let cn = CString::new(name).unwrap();
 		unsafe
@@ -129,65 +123,33 @@ impl Shader
 				gl::GetUniformLocation(self.program, cn.as_ptr()),
 				1,
 				gl::FALSE,
-				value.as_ptr()
+				value.to_cols_array().as_ptr()
 			);
 		}
 	}
 
-	pub fn setVec3(&mut self, name: &str, value: [f32; 3])
+	pub fn setVec2(&mut self, name: &str, value: glam::Vec2)
 	{
 		let cn = CString::new(name).unwrap();
 		unsafe
 		{
-			gl::Uniform3f(
+			gl::Uniform2f(
 				gl::GetUniformLocation(self.program, cn.as_ptr()),
-				*value.get(0).unwrap(),
-				*value.get(1).unwrap(),
-				*value.get(2).unwrap()
+				value.x, value.y
 			);
 		}
 	}
 
-	pub fn setVec4(&mut self, name: &str, value: [f32; 4])
+	pub fn setVec4(&mut self, name: &str, value: glam::Vec4)
 	{
 		let cn = CString::new(name).unwrap();
 		unsafe
 		{
 			gl::Uniform4f(
 				gl::GetUniformLocation(self.program, cn.as_ptr()),
-				*value.get(0).unwrap(),
-				*value.get(1).unwrap(),
-				*value.get(2).unwrap(),
-				*value.get(3).unwrap()
+				value.x, value.y, value.z, value.w
 			);
 		}
-	}
-
-	pub fn setBool(&mut self, name: &str, value: bool)
-	{
-		let cn = CString::new(name).unwrap();
-		unsafe
-		{
-			gl::Uniform1i(
-				gl::GetUniformLocation(self.program, cn.as_ptr()),
-				value as i32
-			);
-		}
-	}
-
-	pub fn getInt(&self, name: &str) -> i32
-	{
-		let cn = CString::new(name).unwrap();
-		let mut out = 0;
-		unsafe
-		{
-			gl::GetUniformiv(
-				self.program,
-				gl::GetUniformLocation(self.program, cn.as_ptr()),
-				&mut out
-			);
-		}
-		out
 	}
 }
 

@@ -1,4 +1,4 @@
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Variable
 {
 	pub num: f32,
