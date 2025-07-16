@@ -1,11 +1,10 @@
-use std::collections::HashMap;
-
 use mlua::{Function, Lua, Value};
 
 use super::{bind, Camera::Drawable, Sprite::Sprite, Text::Text, Window::Window};
 
 pub struct Object
 {
+	name: String,
 	script: Lua,
 	spr: Sprite,
 	text: Text
@@ -13,34 +12,45 @@ pub struct Object
 
 impl Object
 {
-	pub fn parse(name: &str, node: &json::JsonValue) -> Self
+	pub fn new() -> Self
+	{
+		Self
+		{
+			name: String::new(),
+			script: Lua::new(),
+			spr: Sprite::default(),
+			text: Text::new()
+		}
+	}
+	pub fn parse(node: &json::JsonValue) -> Self
 	{
 		let mut obj = Self
 		{
+			name: String::new(),
 			script: Lua::new(),
 			spr: Sprite::default(),
 			text: Text::new()
 		};
 
-		let _ = obj.script.load_std_libs(mlua::StdLib::ALL_SAFE);
-		let _ = obj.script.globals().set(
-			"ScriptID",
-			String::from("ui_") + name
-		);
-
 		bind::sprite(&obj.script);
 		bind::text(&obj.script);
 		Window::initLua(&obj.script);
 
+		let mut f = None;
+
 		for (var, value) in node.entries()
 		{
+			if var == "name"
+			{
+				obj.name = value.as_str().unwrap().to_string()
+			}
 			if var == "script"
 			{
-				let _ = obj.script.load(
+				f = Some(obj.script.load(
 					std::fs::read_to_string(
 						value.as_str().unwrap()
 					).unwrap_or(String::new())
-				).exec();
+				));
 			}
 			if var == "image"
 			{
@@ -101,6 +111,16 @@ impl Object
 			}
 		}
 
+		if let Some(func) = f
+		{
+			let _ = obj.script.load_std_libs(mlua::StdLib::ALL_SAFE);
+			let _ = obj.script.globals().set(
+				"ScriptID",
+				String::from("ui_") + &obj.name
+			);
+			let _ = func.exec();
+		}
+
 		obj
 	}
 
@@ -118,7 +138,7 @@ impl Object
 pub struct UI
 {
 	baseSize: glam::Vec2,
-	objects: HashMap<String, Object>,
+	objects: Vec<Object>,
 	reload: String
 }
 
@@ -129,7 +149,7 @@ impl UI
 		Self
 		{
 			baseSize: glam::Vec2::ZERO,
-			objects: HashMap::new(),
+			objects: vec![],
 			reload: String::new()
 		}
 	}
@@ -156,14 +176,18 @@ impl UI
 
 		for (name, value) in src.entries()
 		{
-			self.objects.insert(
-				name.to_string(),
-				Object::parse(name, value)
-			);
+			let id: usize = name.parse().expect(&format!("Wrong UI object ID: {name}"));
+			if id + 1 > self.objects.len()
+			{
+				self.objects.resize_with(id + 1, || Object::new());
+			}
+
+			self.objects[id] = Object::parse(value);
 		}
 
-		for (name, obj) in &self.objects
+		for obj in &self.objects
 		{
+			let name = &obj.name;
 			if let Ok(f) = obj.script.globals()
 				.get::<mlua::Function>("Init")
 			{
@@ -181,7 +205,11 @@ impl UI
 
 	pub fn getObject(&mut self, name: String) -> &mut Object
 	{
-		self.objects.get_mut(&name).unwrap()
+		for o in &mut self.objects
+		{
+			if o.name == name { return o; }
+		}
+		panic!("UI object '{name}' not found");
 	}
 
 	pub fn update(&mut self)
@@ -191,8 +219,9 @@ impl UI
 			self.load(self.reload.clone());
 			self.reload.clear();
 		}
-		for (name, obj) in &self.objects
+		for obj in &self.objects
 		{
+			let name = &obj.name;
 			if let Ok(f) = obj.script.globals()
 				.get::<mlua::Function>("Update")
 			{
@@ -215,7 +244,7 @@ impl UI
 
 	pub fn resize(&mut self, w: i32, h: i32)
 	{
-		for (_, obj) in &self.objects
+		for obj in &self.objects
 		{
 			if let Ok(f) = obj.script.globals().get::<Function>("OnResized")
 			{
@@ -231,8 +260,9 @@ impl Drawable for UI
 {
 	fn draw(&mut self)
 	{
-		for (name, obj) in &self.objects
+		for obj in &self.objects
 		{
+			let name = &obj.name;
 			if let Ok(f) = obj.script.globals()
 				.get::<mlua::Function>("Draw")
 			{

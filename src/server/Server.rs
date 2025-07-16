@@ -52,10 +52,10 @@ impl Server
 		let _ = webListener.set_nonblocking(true);
 
 		let mut clients = vec![];
-		clients.resize_with(config.maxPlayersCount as usize, || { Client::default() });
+		clients.resize_with(config.getPlayersCount() as usize, || { Client::default() });
 
 		let mut playersState = vec![];
-		playersState.resize(config.maxPlayersCount as usize, [0u8; 9]);
+		playersState.resize(config.getPlayersCount() as usize, [0u8; 9]);
 
 		let udp = UdpSocket::bind("0.0.0.0:0");
 		if udp.is_err()
@@ -101,8 +101,10 @@ impl Server
 					tcp,
 					id,
 					name.clone(),
-					class
+					class.clone()
 				);
+
+				self.broadcast.push(ClientMessage::Login(id, name, class))
 			}
 		}
 
@@ -191,7 +193,7 @@ impl Server
 					let c = &mut self.clients[(id - 1) as usize];
 					c.name = name.clone();
 
-					c.sendTCP(ClientMessage::Login(
+					self.broadcast.push(ClientMessage::Login(
 						id, name.clone(), String::from("unknown"),
 					));
 
@@ -199,6 +201,8 @@ impl Server
 						c.tcp.as_mut().unwrap().peer_addr().unwrap().ip(),
 						name.clone(), String::from("unknown")
 					);
+
+					self.config.setPermission(name.clone(), Permission::Player);
 
 					println!("Welcome, {name}(P{id})!");
 				},
@@ -290,7 +294,7 @@ impl Server
 						title: "Сохранение",
 						props: json::object!
 						{
-							"Чекпоинт": self.state.checkpoint.as_str(),
+							"Чекпоинт": self.state.lastCheckpoint.as_str(),
 							"Дата сохранения": self.state.date.as_str()
 						}
 					});
@@ -311,12 +315,11 @@ impl Server
 
 					let _ = msg.insert("Сервер", json::object!
 					{
-						maxPlayersCount: json::object!
+						extendedPlayers: json::object!
 						{
-							type: "range",
-							name: "Количество игроков",
-							value: self.config.maxPlayersCount,
-							props: json::object! { min: 1, max: 10 }
+							type: "toggle",
+							name: "Расширить количество игроков",
+							value: self.config.extendedPlayers
 						},
 						port: json::object!
 						{
@@ -341,7 +344,6 @@ impl Server
 						let p = match group
 						{
 							Permission::Player => "Игрок",
-							Permission::Admin => "Администратор",
 							Permission::Developer => "Разработчик"
 						};
 						let _ = perms.insert(&name, json::object!
@@ -349,7 +351,7 @@ impl Server
 							type: "list",
 							name: name.clone(),
 							value: p,
-							props: json::array![ "Игрок", "Администратор", "Разработчик" ]
+							props: json::array![ "Игрок", "Разработчик" ]
 						});
 					}
 
@@ -365,6 +367,44 @@ impl Server
 					WebClient::sendResponse(web, WebResponse::Ok(
 						"{}".to_string(), "text/json".to_string()
 					));
+				},
+				ServerMessage::GetInfo =>
+				{
+					let mut players = vec![];
+					
+					for p in &self.clients
+					{
+						if p.id == 0 { break; }
+						players.push(p.id.to_string() + "/" + &p.name + "/" + &p.class);
+					}
+
+					self.clients[(id - 1) as usize].sendTCP(ClientMessage::GetInfo(
+						self.udp.local_addr().unwrap().port(),
+						self.config.tickRate,
+						self.state.checkpoints.clone(),
+						self.config.extendedPlayers, players
+					));
+				},
+				ServerMessage::SelectChar(avatar) =>
+				{
+					let avatar = (avatar - 1) % 5;
+					let mut class = match avatar
+					{
+						0 => "sorcerer",
+						1 => "thief",
+						2 => "knight",
+						3 => "engineer",
+						4 => "bard",
+						_ => "unknown"
+					};
+					let c = &mut self.clients[(id - 1) as usize];
+					if c.class == class { class = "unknown"; }
+					println!("Player {} selected avatar #{avatar}({class})", id);
+					c.class = class.to_string();
+					self.state.playersList.get_mut(
+						&c.tcp.as_mut().unwrap().peer_addr().unwrap().ip()
+					).unwrap().1 = c.class.clone();
+					self.broadcast.push(ClientMessage::SelectChar(id, class.to_string()));
 				}
 			}
 		}
@@ -385,7 +425,7 @@ impl Server
 
 	fn broadcastState(&mut self)
 	{
-		for i in 0..self.config.maxPlayersCount as usize
+		for i in 0..self.config.getPlayersCount() as usize
 		{
 			if i >= self.clients.len() { break; }
 			let addr = self.clients[i].udp;
@@ -393,7 +433,7 @@ impl Server
 			let addr = addr.unwrap();
 
 			let mut buffer: Vec<u8> = vec![];
-			for id in 0..self.config.maxPlayersCount as usize
+			for id in 0..self.config.getPlayersCount() as usize
 			{
 				if self.playersState[id][0] == 0 || id == i { continue; }
 				buffer.append(&mut self.playersState[id].to_vec());
@@ -412,7 +452,7 @@ impl Server
 	
 	fn getAvailablePlayerID(&self) -> u8
 	{
-		for i in 0..self.config.maxPlayersCount as usize
+		for i in 0..self.config.getPlayersCount() as usize
 		{
 			if self.clients[i].id == 0 { return (i + 1) as u8; }
 		}
@@ -421,7 +461,7 @@ impl Server
 
 	fn getPlayerID(&self, name: &str) -> u8
 	{
-		for i in 0..self.config.maxPlayersCount as usize
+		for i in 0..self.config.getPlayersCount() as usize
 		{
 			if self.clients[i].name.to_lowercase() == name.to_lowercase()
 			{
@@ -451,7 +491,7 @@ impl Server
 		
 		let c = args.nth(0).unwrap_or(" ");
 
-		if c == "getposition" && p.check(Permission::Admin)
+		if c == "getposition" && p.check(Permission::Developer)
 		{
 			let n = args.nth(0).unwrap_or(&name);
 			let id = self.getPlayerID(n);
@@ -469,7 +509,7 @@ impl Server
 			self.broadcast.push(ClientMessage::Chat(msg.clone()));
 			self.state.chatHistory.push((name.to_string(), msg));
 		}
-		else if c == "setposition" && p.check(Permission::Admin)
+		else if c == "setposition" && p.check(Permission::Developer)
 		{
 			let n = args.nth(0).unwrap_or(&name);
 			let id = self.getPlayerID(n);
@@ -494,6 +534,10 @@ impl Server
 			self.state.chatHistory.push((name.clone(),
 				format!("Текущее время сервера: {}", State::getDateTime())
 			));
+		}
+		else if c == "save"
+		{
+			self.save(args.nth(0).unwrap().to_string());
 		}
 	}
 

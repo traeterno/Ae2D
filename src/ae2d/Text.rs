@@ -193,6 +193,8 @@ impl Text
 		self.vertices = line.len() as i32 / 4;
 		
 		let scale = self.size / self.font.height;
+
+		self.dimensions = glam::Vec2::ZERO;
 		
 		for i in 0..self.vertices as usize
 		{

@@ -14,22 +14,25 @@ pub enum ServerMessage
 	GameState(SocketAddr),
 	ChatLength(SocketAddr),
 	GetSettings(SocketAddr),
-	SaveSettings(SocketAddr)
+	SaveSettings(SocketAddr),
+	GetInfo,
+	SelectChar(u8)
 }
 
 impl ServerMessage
 {
 	pub fn fromRaw(data: &[u8]) -> Self
 	{
-		let code = data[0];
 		let mut args = Vec::from(data);
-		let _ = args.remove(0);
+		let code = args.remove(0);
 
 		match code
 		{
 			1 => Self::Register(String::from_utf8_lossy(&args).to_string()),
 			2 => Self::Chat(String::from_utf8_lossy(&args).to_string(), "0.0.0.0:0".parse().unwrap()),
 			3 => Self::SaveGame(String::from_utf8_lossy(&args).to_string()),
+			4 => Self::GetInfo,
+			5 => Self::SelectChar(args[0]),
 			_ => Self::Invalid("0.0.0.0:0".parse().unwrap())
 		}
 	}
@@ -43,7 +46,8 @@ pub enum ClientMessage
 	Disconnected(u8),
 	Chat(String),
 	SetPosition(u16, u16),
-	GetInfo(u16, u8, String, u8)
+	GetInfo(u16, u8, Vec<String>, bool, Vec<String>),
+	SelectChar(u8, String)
 }
 
 impl ClientMessage
@@ -54,18 +58,31 @@ impl ClientMessage
 		{
 			Self::Login(
 				id, name, class) => [
-					&[1], &[id],
-					name.as_bytes(), &[0],
+					&[1u8], &[id],
+					name.as_bytes(), &[0u8],
 					class.as_bytes()
 				].concat().to_vec(),
-			Self::Disconnected(id) => vec![2, id],
-			Self::Chat(text) => [&[3], text.as_bytes()].concat().to_vec(),
+			Self::Disconnected(id) => vec![2u8, id],
+			Self::Chat(text) => [&[3u8], text.as_bytes()].concat().to_vec(),
 			Self::SetPosition(x, y) => [&[4u8] as &[u8],
 					&x.to_le_bytes(), &y.to_le_bytes()
 				].concat().to_vec(),
-			Self::GetInfo(udp, tickRate, checkpoint, playersCount) => [
+			Self::GetInfo(
+				udp, tickRate, checkpointList,
+				extendPlayers, playersList) =>
+			{
+				let mut players = String::new();
+				let mut checkpoints = String::new();
+
+				for p in playersList { players = players + &p + "|"; }
+				for c in checkpointList { checkpoints = checkpoints + &c + "|"; }
+				[
 					&[5u8] as &[u8], &udp.to_le_bytes(), &[tickRate],
-					&[playersCount], checkpoint.as_bytes()
+					&[extendPlayers as u8], players.as_bytes(), &[0u8], checkpoints.as_bytes()
+				].concat().to_vec()
+			},
+			Self::SelectChar(id, class) => [&[6u8],
+					&[id], class.as_bytes()
 				].concat().to_vec()
 		}
 	}

@@ -29,18 +29,14 @@ impl Client
 		let _ = tcp.set_nodelay(true);
 		let _ = tcp.set_nonblocking(true);
 		
-		let mut client = Self
+		Self
 		{
 			id,
 			tcp: Some(tcp),
 			name: name.clone(),
 			class: class.clone(),
 			udp: None
-		};
-
-		client.sendTCP(ClientMessage::Login(id, name, class));
-
-		client
+		}
 	}
 
 	pub fn sendTCP(&mut self, msg: ClientMessage)

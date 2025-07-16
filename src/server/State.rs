@@ -3,7 +3,8 @@ use std::{collections::HashMap, net::IpAddr};
 pub struct State
 {
 	pub playersList: HashMap<IpAddr, (String, String)>,
-	pub checkpoint: String,
+	pub lastCheckpoint: String,
+	pub checkpoints: Vec<String>,
 	pub date: String,
 	pub chatHistory: Vec<(String, String)>
 }
@@ -15,7 +16,8 @@ impl State
 		Self
 		{
 			playersList: HashMap::new(),
-			checkpoint: String::new(),
+			lastCheckpoint: String::new(),
+			checkpoints: vec![],
 			date: String::new(),
 			chatHistory: vec![]
 		}
@@ -55,7 +57,20 @@ impl State
 			}
 			if section.0 == "checkpoint"
 			{
-				state.checkpoint = section.1.as_str().unwrap_or("").to_string();
+				for (x, y) in section.1.entries()
+				{
+					if x == "last"
+					{
+						state.lastCheckpoint = y.as_str().unwrap().to_string();
+					}
+					if x == "available"
+					{
+						for c in y.members()
+						{
+							state.checkpoints.push(c.as_str().unwrap().to_string());
+						}
+					}
+				}
 			}
 			if section.0 == "date"
 			{
@@ -77,22 +92,40 @@ impl State
 
 	pub fn save(&mut self, checkpoint: String)
 	{
+		let mut found = false;
+		for c in &self.checkpoints
+		{
+			if *c == checkpoint { found = true; break; }
+		}
+		if !found { self.checkpoints.push(checkpoint.clone()); }
+		
 		self.date = State::getDateTime();
 
 		let mut players = json::JsonValue::new_object();
 		for (ip, data) in &self.playersList
 		{
-			let mut info = json::JsonValue::new_object();
+			let mut info = json::object! {};
 			let name = data.0.clone();
 			let _ = info.insert("name", name.clone());
 			let _ = info.insert("class", data.1.clone());
 			let _ = players.insert(&ip.to_string(), info);
 		}
 
-		let mut state = json::JsonValue::new_object();
-		let _ = state.insert("players", players);
-		let _ = state.insert("checkpoint", checkpoint);
-		let _ = state.insert("date", self.date.clone());
+		let mut checkpoints = json::array![];
+		for c in &self.checkpoints
+		{
+			let _ = checkpoints.push(c.as_str());
+		}
+
+		let state = json::object!
+		{
+			players: players,
+			date: self.date.clone(),
+			checkpoint: {
+				last: checkpoint,
+				available: checkpoints
+			}
+		};
 
 		let _ = std::fs::write(
 			"res/system/save.json",

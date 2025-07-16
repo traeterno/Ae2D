@@ -152,9 +152,9 @@ impl WebClient
 			let cfg = Server::getInstance().getConfig();
 			for (var, value) in data.entries()
 			{
-				if var == "maxPlayersCount"
+				if var == "extendedPlayers"
 				{
-					cfg.maxPlayersCount = value.as_u8().unwrap_or(1);
+					cfg.extendedPlayers = value.as_bool().unwrap_or(false);
 				}
 				else if var == "port"
 				{
@@ -172,7 +172,6 @@ impl WebClient
 					match value.as_str().unwrap_or("")
 					{
 						"Разработчик" => super::Config::Permission::Developer,
-						"Администратор" => super::Config::Permission::Admin,
 						_ => super::Config::Permission::Player,
 					});
 				}

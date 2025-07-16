@@ -1,4 +1,4 @@
-#![allow(non_snake_case, static_mut_refs)]
+#![allow(non_snake_case, static_mut_refs, dead_code)]
 mod ae2d;
 mod server;
 

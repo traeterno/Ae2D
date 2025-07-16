@@ -100,7 +100,9 @@ pub struct Sprite
 	vao: u32,
 	rectXY: glam::Vec2,
 	texSize: glam::Vec2,
-	ts: Transformable2D
+	ts: Transformable2D,
+	color: glam::Vec4,
+	frameSize: glam::Vec2
 }
 
 impl Sprite
@@ -134,7 +136,9 @@ impl Sprite
 			vbo, vao,
 			rectXY: glam::Vec2::ZERO,
 			texSize: glam::Vec2::ZERO,
-			ts: Transformable2D::new()
+			ts: Transformable2D::new(),
+			color: glam::Vec4::ONE,
+			frameSize: glam::Vec2::ZERO
 		}
 	}
 
@@ -244,6 +248,7 @@ impl Sprite
 			);
 		}
 		spr.texSize = glam::vec2(w as f32, h as f32);
+		spr.frameSize = spr.texSize;
 		spr
 	}
 
@@ -275,6 +280,7 @@ impl Sprite
 			y += frame.y;
 			x = 0;
 		}
+		self.frameSize = glam::vec2(size.0 as f32, size.1 as f32);
 	}
 
 	pub fn getCurrentFrame(&mut self) -> glam::Vec4
@@ -305,6 +311,7 @@ impl Sprite
 	pub fn setTextureRect(&mut self, rect: glam::Vec4)
 	{
 		self.rectXY = rect.xy();
+		self.frameSize = rect.zw();
 		unsafe
 		{
 			gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
@@ -329,7 +336,31 @@ impl Sprite
 
 	pub fn getFrameSize(&self) -> glam::Vec2
 	{
-		self.texSize
+		self.frameSize
+	}
+
+	pub fn setColor(&mut self, clr: (u8, u8, u8, u8))
+	{
+		self.color = glam::vec4(
+			clr.0 as f32 / 255.0,
+			clr.1 as f32 / 255.0,
+			clr.2 as f32 / 255.0,
+			clr.3 as f32 / 255.0
+		);
+	}
+
+	pub fn getBounds(&mut self) -> glam::Vec4
+	{
+		let s = self.getFrameSize();
+		let m = self.ts.getMatrix();
+		let p1 = m * glam::vec4(0.0, 0.0, 0.0, 1.0);
+		let p2 = m * glam::vec4(s.x, 0.0, 0.0, 1.0);
+		let p3 = m * glam::vec4(s.x, s.y, 0.0, 1.0);
+		let p4 = m * glam::vec4(0.0, s.y, 0.0, 1.0);
+		
+		let min = p1.min(p2).min(p3).min(p4);
+		let max = p1.max(p2).max(p3).max(p4);
+		glam::vec4(min.x, min.y, max.x - min.x, max.y - min.y)
 	}
 }
 
@@ -350,7 +381,7 @@ impl Drawable for Sprite
 		);
 		s.setVec2("texSize", self.texSize);
 		s.setMat4("model", self.ts.getMatrix());
-		s.setVec4("color", glam::Vec4::ONE);
+		s.setVec4("color", self.color);
 		unsafe
 		{
 			gl::BindVertexArray(self.vao);

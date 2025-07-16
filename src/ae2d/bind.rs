@@ -48,6 +48,14 @@ pub fn sprite(s: &Lua)
 		Ok((s.x, s.y))
 	}).unwrap());
 
+	let _ = t.set("bounds",
+	s.create_function(|s, _: ()|
+	{
+		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
+		let s = spr.getBounds();
+		Ok((s.x, s.y, s.z, s.w))
+	}).unwrap());
+
 	let _ = t.set("setTextureRect",
 	s.create_function(|s, x: (f32, f32, f32, f32)|
 	{
@@ -61,6 +69,14 @@ pub fn sprite(s: &Lua)
 	{
 		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
 		spr.setAnimation(x);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.set("setColor",
+	s.create_function(|s, x: (u8, u8, u8, u8)|
+	{
+		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
+		spr.setColor(x);
 		Ok(())
 	}).unwrap());
 
@@ -316,7 +332,6 @@ pub fn network(s: &Lua)
 			return Ok(false);
 		}
 		let tcp = tcp.unwrap();
-		let _ = tcp.set_nonblocking(true);
 
 		let udp = UdpSocket::bind("0.0.0.0:0");
 		if udp.is_err()
@@ -340,7 +355,6 @@ pub fn network(s: &Lua)
 		net.id = data.0;
 		net.name = data.1;
 		net.class = data.2;
-		std::thread::spawn(Network::updateThread);
 		Ok(())
 	}).unwrap());
 
@@ -374,7 +388,8 @@ pub fn network(s: &Lua)
 				ClientMessage::Disconnected(..) => if id == 2 { return Ok(true); }
 				ClientMessage::Chat(..) => if id == 3 { return Ok(true); }
 				ClientMessage::SetPosition(..) => if id == 4 { return Ok(true); }
-				ClientMessage::GetInfo(..) => if id == 5 { return Ok(true); }
+				ClientMessage::GetInfo(..) => if id == 5 { return Ok(true); },
+				ClientMessage::SelectChar(..) => if id == 6 { return Ok(true); }
 			}
 		}
 		Ok(false)
@@ -399,6 +414,48 @@ pub fn network(s: &Lua)
 					let _ = t.raw_set("class", class.to_string());
 					found = true;
 				}
+				ClientMessage::Disconnected(id) =>
+				{
+					if msg != 2 { continue; }
+					let _ = t.raw_set("id", *id);
+					found = true;
+				}
+				ClientMessage::GetInfo(udpPort, tickRate, checkpoints,
+					extendPlayers, players) =>
+				{
+					if msg != 5 { continue; }
+					let _ = t.raw_set("udpPort", *udpPort);
+					let _ = t.raw_set("tickRate", *tickRate);
+					let _ = t.raw_set("extendPlayers", *extendPlayers);
+					let c = s.create_table().unwrap();
+					for cp in checkpoints { let _ = c.raw_push(cp.clone()); }
+					let _ = t.raw_set("checkpoints", c);
+					let p = s.create_table().unwrap();
+					for pl in players
+					{
+						let mut a = pl.split("/");
+						let b = s.create_table().unwrap();
+						let _ = b.raw_set(
+							"id", a.nth(0).unwrap().parse::<u8>().unwrap()
+						);
+						let _ = b.raw_set(
+							"name", a.nth(0).unwrap()
+						);
+						let _ = b.raw_set(
+							"class", a.nth(0).unwrap()
+						);
+						let _ = p.raw_push(b);
+					}
+					let _ = t.raw_set("players", p);
+					found = true;
+				},
+				ClientMessage::SelectChar(id, class) =>
+				{
+					if msg != 6 { continue; }
+					let _ = t.raw_set("id", *id);
+					let _ = t.raw_set("class", class.clone());
+					found = true;
+				},
 				_ => {}
 			}
 			if found { net.tcpHistory.swap_remove(i); break; }
@@ -417,10 +474,39 @@ pub fn network(s: &Lua)
 			{
 				let name: String = x.1.get("name").unwrap();
 				[&[1u8], name.as_bytes()].concat()
-			},
+			}
+			4 =>
+			{
+				[4u8].to_vec()
+			}
+			5 =>
+			{
+				let id: u8 = x.1.get("id").unwrap();
+				[5u8, id].to_vec()
+			}
 			_ => vec![]
 		});
 		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("setup", 
+	s.create_function(|_, x: (u16, u8)|
+	{
+		Window::getNetwork().setup(x.0, x.1);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("setEP",
+	s.create_function(|_, x: bool|
+	{
+		Window::getNetwork().setEP(x);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("getEP",
+	s.create_function(|_, _: ()|
+	{
+		Ok(Window::getNetwork().getEP())
 	}).unwrap());
 
 	let _ = s.globals().set("network", t);

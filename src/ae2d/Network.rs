@@ -1,15 +1,8 @@
 use std::{io::{ErrorKind, Read}, net::{TcpStream, UdpSocket}, time::{Duration, Instant}};
 
-use mlua::{Error, Lua};
-
 use crate::server::Transmission::ClientMessage;
 
 use super::Window::Window;
-
-struct SavedState
-{
-	checkpoint: String
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct PlayerState
@@ -85,7 +78,6 @@ pub struct Network
 	tickTime: Duration,
 	mainState: PlayerState,
 	pub state: Vec<PlayerState>,
-	save: SavedState,
 	pub tcpHistory: Vec<ClientMessage>
 }
 
@@ -104,43 +96,39 @@ impl Network
 			tickTime: Duration::from_secs(1),
 			mainState: PlayerState::default(),
 			state: vec![],
-			save: SavedState { checkpoint: String::new() },
 			tcpHistory: vec![]
 		}
 	}
 
-	fn login(_: &Lua, data: (u8, String, String)) -> Result<(), Error>
+	pub fn setup(&mut self, udp: u16, tickRate: u8)
 	{
-		let net = Window::getNetwork();
-
-		net.id = data.0;
-		net.name = data.1;
-		net.class = data.2;
-
-		// let addr = net.tcp.as_mut().unwrap().peer_addr().unwrap().ip().to_string() + ":" +
-		// &u16::from_le_bytes([
-		// 	buffer[3 + net.name.len() + net.class.len()],
-		// 	buffer[4 + net.name.len() + net.class.len()]
-		// ]).to_string();
-		// println!("Connecting UDP to {addr}");
-		// net.udp.as_mut().unwrap().connect(addr);
-
-		// net.tickRate = buffer[5 + net.name.len() + net.class.len()];
-
-		// net.state.resize(
-		// 	buffer[6 + net.name.len() + net.class.len()] as usize,
-		// 	PlayerState::default()
-		// );
-
-		// net.tickTime = Duration::from_secs_f32(1.0 / (net.tickRate as f32));
+		let addr = self.tcp.as_mut().unwrap().peer_addr().unwrap().ip()
+			.to_string() + ":" + &udp.to_string();
+		println!("Connecting UDP to {addr}");
 		
-		// net.save.checkpoint = String::from_utf8_lossy(
-		// 	&buffer[7 + net.name.len() + net.class.len()..buffer.len()]
-		// ).to_string();
+		match self.udp.as_mut().unwrap().connect(addr)
+		{
+			Ok(_) => {}
+			Err(x) => println!("Failed: {x}")
+		}
+
+		self.tickRate = tickRate;
+		self.tickTime = Duration::from_secs_f32(1.0 / self.tickRate as f32);
 
 		std::thread::spawn(Network::updateThread);
-		
-		Ok(())
+	}
+
+	pub fn setEP(&mut self, extendPlayers: bool)
+	{
+		self.state.resize(
+			5 * if extendPlayers { 2 } else { 1 },
+			PlayerState::default()
+		);
+	}
+
+	pub fn getEP(&self) -> bool
+	{
+		self.state.len() / 5 == 2
 	}
 
 	fn receiveUDP(&mut self) -> Option<Vec<u8>>
@@ -170,6 +158,8 @@ impl Network
 
 	pub fn updateThread()
 	{
+		// TODO try udp.set_nonblocking(false) and optimize the code to get lower cpu usage
+		// (current going 2% -> 27%)
 		let net = Window::getNetwork();
 		let mut timer = Instant::now();
 		'main: loop
@@ -211,6 +201,7 @@ impl Network
 				{
 					if let Some(msg) = Network::parse(&buf[0..size])
 					{
+						println!("New message: {msg:?}");
 						net.tcpHistory.push(msg);
 					}
 				},
@@ -254,6 +245,58 @@ impl Network
 				
 				Some(ClientMessage::Login(id, name, class))
 			},
+			2 =>
+			{
+				Some(ClientMessage::Disconnected(buffer[1]))
+			}
+			5 =>
+			{
+				let udpPort = u16::from_le_bytes([buffer[1], buffer[2]]);
+				let tickRate = buffer[3];
+				let extendPlayers = buffer[4] != 0;
+				
+				let players =
+				{
+					let mut v = vec![];
+					let mut len = 0;
+					while buffer[5 + len] != 0 { len += 1; }
+					len -= 1;
+					let raw = String::from_utf8_lossy(&buffer[5..5 + len]).to_string();
+					for p in raw.split("|") { v.push(p.to_string()) }
+					v
+				};
+
+				let pl =
+				{
+					let mut size = 0;
+					for p in &players { size += p.len(); }
+					size
+				};
+
+				let checkpoints =
+				{
+					let mut v = vec![];
+					let raw = String::from_utf8_lossy(
+						&buffer[7 + pl..buffer.len() - 1])
+						.to_string();
+					for c in raw.split("|")
+					{
+						v.push(c.to_string());
+					}
+					v
+				};
+				
+				Some(ClientMessage::GetInfo(
+					udpPort, tickRate, checkpoints, extendPlayers, players
+				))
+			},
+			6 =>
+			{
+				Some(ClientMessage::SelectChar(
+					buffer[1],
+					String::from_utf8_lossy(&buffer[2..buffer.len()]).to_string()
+				))
+			}
 			_ => None
 		}
 	}

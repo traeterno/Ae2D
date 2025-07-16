@@ -1,28 +1,18 @@
 use std::{collections::HashMap, time::Duration};
 
-#[derive(Clone, PartialEq)]
 pub enum Permission
 {
 	Developer,
-	Admin,
 	Player
 }
 
 impl Permission
 {
-	pub fn fromString(x: &str) -> Self
-	{
-		if x == "dev" { return Permission::Developer; }
-		if x == "admin" { return Permission::Admin; }
-		Permission::Player
-	}
-
 	pub fn toString(&self) -> String
 	{
 		match self
 		{
 			Permission::Developer => String::from("dev"),
-			Permission::Admin => String::from("admin"),
 			Permission::Player => String::from("player")
 		}
 	}
@@ -32,15 +22,18 @@ impl Permission
 		match lvl
 		{
 			Permission::Player => true,
-			Permission::Admin => { *self == Permission::Admin || *self == Permission::Developer },
-			Permission::Developer => *self == Permission::Developer
+			Permission::Developer => match *self
+			{
+				Permission::Developer => true,
+				Permission::Player => false
+			}
 		}
 	}
 }
 
 pub struct Config
 {
-	pub maxPlayersCount: u8,
+	pub extendedPlayers: bool,
 	pub port: u16,
 	pub tickRate: u8,
 	pub sendTime: Duration,
@@ -54,7 +47,7 @@ impl Default for Config
 	{
 		Self
 		{
-			maxPlayersCount: 5,
+			extendedPlayers: false,
 			port: 0,
 			tickRate: 1,
 			sendTime: Duration::from_secs(1),
@@ -83,9 +76,9 @@ impl Config
 			{
 				for (name, value) in section.1.entries()
 				{
-					if name == "maxPlayersCount"
+					if name == "extendedPlayers"
 					{
-						state.maxPlayersCount = value.as_u8().unwrap_or(1);
+						state.extendedPlayers = value.as_bool().unwrap_or(false);
 					}
 					if name == "port"
 					{
@@ -105,7 +98,12 @@ impl Config
 				{
 					state.permissions.insert(
 						name.to_string(),
-						Permission::fromString(group.as_str().unwrap_or(""))
+						match group.as_str().unwrap_or("player")
+						{
+							"dev" => Permission::Developer,
+							"player" => Permission::Player,
+							x => panic!("Wrong permission level: {x}")
+						}
 					);
 				}
 			}
@@ -121,7 +119,7 @@ impl Config
 			Ok(file) => { Self::load(file) },
 			Err(error) =>
 			{
-				println!("Failed to load config: {:?}\nCreating new config.", error);
+				println!("Failed to load config: {}. Creating new config.", error);
 				Self::default()
 			}
 		}
@@ -130,7 +128,7 @@ impl Config
 	pub fn save(&self)
 	{
 		let mut settings = json::JsonValue::new_object();
-		let _ = settings.insert("maxPlayersCount", self.maxPlayersCount);
+		let _ = settings.insert("extendedPlayers", self.extendedPlayers);
 		let _ = settings.insert("port", self.port);
 		let _ = settings.insert("tickRate", self.tickRate);
 
@@ -144,17 +142,31 @@ impl Config
 		let _ = state.insert("settings", settings);
 		let _ = state.insert("permissions", permissions);
 		
-		let _ = std::fs::write("res/system/config.json", json::stringify_pretty(state, 4));
+		match std::fs::write("res/system/config.json", json::stringify_pretty(state, 4))
+		{
+			Ok(_) => {},
+			Err(x) => match x.kind()
+			{
+				std::io::ErrorKind::NotFound =>
+				{
+					let _ = std::fs::DirBuilder::new().recursive(true).create("res/system");
+					self.save();
+				}
+				_ => {}
+			}
+		}
 	}
 
-	pub fn getPermission(&mut self, name: &String) -> Permission
+	pub fn getPermission(&mut self, name: &String) -> &Permission
 	{
-		if name == "WebClient" { return Permission::Developer; }
-		self.permissions.get(name).unwrap_or(&Permission::Player).clone()
+		if name == "WebClient" { return &Permission::Developer; }
+		self.permissions.get(name).unwrap_or(&Permission::Player)
 	}
 
 	pub fn setPermission(&mut self, name: String, group: Permission)
 	{
 		self.permissions.insert(name, group);
 	}
+
+	pub fn getPlayersCount(&self) -> u8 { 5 * if self.extendedPlayers { 2 } else { 1 } }
 }

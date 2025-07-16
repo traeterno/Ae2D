@@ -20,7 +20,8 @@ pub struct Window
 	cam: Camera,
 	textures: HashMap<String, u32>,
 	ui: UI,
-	net: Network
+	net: Network,
+	inputEvent: Option<char>
 }
 
 impl Window
@@ -42,7 +43,8 @@ impl Window
 			cam: Camera::new(),
 			textures: HashMap::new(),
 			ui: UI::new(),
-			net: Network::new()
+			net: Network::new(),
+			inputEvent: None
 		}
 	}
 
@@ -144,6 +146,7 @@ impl Window
 		window.set_mouse_button_polling(true);
 		window.set_key_polling(true);
 		window.set_size_polling(true);
+		window.set_char_polling(true);
 		window.make_current();
 		
 		gl::load_with(|name| i.context.get_proc_address_raw(name));
@@ -162,7 +165,6 @@ impl Window
 		{
 			gl::Enable(gl::BLEND);
 			gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-			gl::DepthFunc(gl::LESS);
 			gl::Viewport(0, 0, size.x as i32, size.y as i32);
 		}
 
@@ -175,6 +177,7 @@ impl Window
 
 		i.mouseEvent = None;
 		i.keyEvent = None;
+		i.inputEvent = None;
 		i.deltaTime = i.lastTime.elapsed().as_secs_f32();
 		i.lastTime = std::time::Instant::now();
 		
@@ -203,6 +206,10 @@ impl Window
 					{
 						gl::Viewport(0, 0, w, h);
 					}
+				},
+				glfw::WindowEvent::Char(c) =>
+				{
+					i.inputEvent = Some(c);
 				}
 				e => println!("{e:?}")
 			}
@@ -379,6 +386,14 @@ impl Window
 			Ok((s.x, s.y))
 		}).unwrap());
 
+		let _ = table.raw_set("input",
+		script.create_function(|_, _: ()|
+		{
+			let x = Window::getInstance().inputEvent;
+			if let Some(c) = x { Ok(c.to_string()) }
+			else { Ok(String::new()) }
+		}).unwrap());
+
 		let _ = script.globals().set("window", table);
 
 		bind::network(script);
@@ -435,6 +450,9 @@ impl Window
 			"Num7" => glfw::Key::Num7,
 			"Num8" => glfw::Key::Num8,
 			"Num9" => glfw::Key::Num9,
+			"Escape" => glfw::Key::Escape,
+			"Enter" => glfw::Key::Enter,
+			"Backspace" => glfw::Key::Backspace,
 			_ => glfw::Key::Unknown
 		}
 	}

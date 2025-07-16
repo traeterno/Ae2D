@@ -15,10 +15,8 @@ pub struct Camera
 	size: (i32, i32),
 	fbo: u32,
 	tex: u32,
-	zbuf: u32,
 	vao: u32,
-	vbo: u32,
-	layer: i32
+	vbo: u32
 }
 
 impl Camera
@@ -35,10 +33,8 @@ impl Camera
 			size: (0, 0),
 			fbo: 0,
 			tex: 0,
-			zbuf: 0,
 			vao: 0,
-			vbo: 0,
-			layer: 0
+			vbo: 0
 		}
 	}
 
@@ -69,20 +65,6 @@ impl Camera
 			gl::FramebufferTexture2D(
 				gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0,
 				gl::TEXTURE_2D, self.tex, 0
-			);
-
-			gl::GenTextures(1, &mut self.zbuf);
-			gl::BindTexture(gl::TEXTURE_2D, self.zbuf);
-
-			gl::TexImage2D(
-				gl::TEXTURE_2D, 0, gl::DEPTH_COMPONENT as i32,
-				w, h, 0,
-				gl::DEPTH_COMPONENT, gl::UNSIGNED_INT, 0 as _
-			);
-
-			gl::FramebufferTexture2D(
-				gl::FRAMEBUFFER, gl::DEPTH_ATTACHMENT,
-				gl::TEXTURE_2D, self.zbuf, 0
 			);
 			
 			gl::GenVertexArrays(1, &mut self.vao);
@@ -120,19 +102,10 @@ impl Camera
 
 	pub fn clear(&mut self)
 	{
-		self.layer = -99;
-		self.imgShader.activate();
-		self.imgShader.setInt("layer", self.layer);
-		self.txtShader.activate();
-		self.txtShader.setInt("layer", self.layer);
-		self.shapeShader.activate();
-		self.shapeShader.setInt("layer", self.layer);
 		unsafe
 		{
-			gl::Enable(gl::DEPTH_TEST);
 			gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo);
-			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-			
+			gl::Clear(gl::COLOR_BUFFER_BIT);
 		}
 	}
 
@@ -140,7 +113,6 @@ impl Camera
 	{
 		unsafe
 		{
-			gl::Disable(gl::DEPTH_TEST);
 			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 			self.cameraShader.activate();
 			self.cameraShader.setInt("tex", 0);
@@ -167,7 +139,7 @@ impl Camera
 		let m = glam::Mat4::orthographic_rh_gl(
 			0.0, s.0 as f32,
 			s.1 as f32, 0.0,
-			-100.0, 100.0
+			-1.0, 1.0
 		);
 		self.imgShader.activate();
 		self.imgShader.setMat4("projection", m);
@@ -184,26 +156,12 @@ impl Camera
 				s.0, s.1, 0, gl::RGB,
 				gl::UNSIGNED_BYTE, 0 as _
 			);
-
-			gl::BindTexture(gl::TEXTURE_2D, self.zbuf);
-			gl::TexImage2D(
-				gl::TEXTURE_2D, 0, gl::DEPTH_COMPONENT as i32,
-				s.0, s.1, 0, gl::DEPTH_COMPONENT,
-				gl::UNSIGNED_BYTE, 0 as _
-			);
 		}
 	}
 
 	pub fn draw(&mut self, obj: &mut impl Drawable)
 	{
 		obj.draw();
-		self.layer += 1;
-		self.imgShader.activate();
-		self.imgShader.setInt("layer", self.layer);
-		self.txtShader.activate();
-		self.txtShader.setInt("layer", self.layer);
-		self.shapeShader.activate();
-		self.shapeShader.setInt("layer", self.layer);
 	}
 	pub fn getImgShader(&mut self) -> &mut Shader { &mut self.imgShader }
 	pub fn getTxtShader(&mut self) -> &mut Shader { &mut self.txtShader }
