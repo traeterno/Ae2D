@@ -1,5 +1,7 @@
 use std::{collections::HashMap, net::IpAddr};
 
+use crate::server::Config::Config;
+
 pub struct State
 {
 	pub playersList: HashMap<IpAddr, (String, String)>,
@@ -22,7 +24,7 @@ impl State
 			chatHistory: vec![]
 		}
 	}
-	fn load(file: String) -> Self
+	fn load(file: String, cfg: &Config) -> Self
 	{
 		let doc = json::parse(&file);
 		if doc.is_err() { println!("Failed to load save."); return Self::new(); }
@@ -77,15 +79,20 @@ impl State
 				state.date = section.1.as_str().unwrap_or("").to_string();
 			}
 		}
+
+		if state.checkpoints.len() == 0
+		{
+			state.checkpoints.push(cfg.firstCheckpoint.clone());
+		}
 		
 		state
 	}
 
-	pub fn init() -> Self
+	pub fn init(cfg: &Config) -> Self
 	{
 		match std::fs::read_to_string("res/system/save.json")
 		{
-			Ok(file) => Self::load(file),
+			Ok(file) => Self::load(file, cfg),
 			Err(_) => Self::new()
 		}
 	}

@@ -509,5 +509,11 @@ pub fn network(s: &Lua)
 		Ok(Window::getNetwork().getEP())
 	}).unwrap());
 
+	let _ = t.raw_set("serverIP",
+	s.create_function(|_, _: ()|
+	{
+		Ok(Window::getNetwork().tcp.as_mut().unwrap().peer_addr().unwrap().to_string())
+	}).unwrap());
+
 	let _ = s.globals().set("network", t);
 }

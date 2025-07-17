@@ -166,6 +166,10 @@ impl WebClient
 					cfg.sendTime = Duration::from_secs_f32(1.0 / cfg.tickRate as f32);
 					cfg.recvTime = Duration::from_secs_f32(0.5 / cfg.tickRate as f32);
 				}
+				else if var == "firstCP"
+				{
+					cfg.firstCheckpoint = value.as_str().unwrap().to_string();
+				}
 				else
 				{
 					cfg.setPermission(var.to_string(),

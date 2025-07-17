@@ -39,6 +39,7 @@ pub struct Config
 	pub sendTime: Duration,
 	pub recvTime: Duration,
 	pub permissions: HashMap<String, Permission>,
+	pub firstCheckpoint: String
 }
 
 impl Default for Config
@@ -52,7 +53,8 @@ impl Default for Config
 			tickRate: 1,
 			sendTime: Duration::from_secs(1),
 			recvTime: Duration::from_secs_f32(0.5),
-			permissions: HashMap::new()
+			permissions: HashMap::new(),
+			firstCheckpoint: String::new()
 		}
 	}
 }
@@ -78,17 +80,21 @@ impl Config
 				{
 					if name == "extendedPlayers"
 					{
-						state.extendedPlayers = value.as_bool().unwrap_or(false);
+						state.extendedPlayers = value.as_bool().unwrap();
 					}
 					if name == "port"
 					{
-						state.port = value.as_u16().unwrap_or(2018);
+						state.port = value.as_u16().unwrap();
 					}
 					if name == "tickRate"
 					{
-						state.tickRate = value.as_u8().unwrap_or(30);
+						state.tickRate = value.as_u8().unwrap();
 						state.sendTime = Duration::from_secs_f32(1.0 / state.tickRate as f32);
 						state.recvTime = Duration::from_secs_f32(0.5 / state.tickRate as f32);
+					}
+					if name == "firstCP"
+					{
+						state.firstCheckpoint = value.as_str().unwrap().to_string();
 					}
 				}
 			}
@@ -127,11 +133,6 @@ impl Config
 
 	pub fn save(&self)
 	{
-		let mut settings = json::JsonValue::new_object();
-		let _ = settings.insert("extendedPlayers", self.extendedPlayers);
-		let _ = settings.insert("port", self.port);
-		let _ = settings.insert("tickRate", self.tickRate);
-
 		let mut permissions = json::JsonValue::new_object();
 		for (name, group) in &self.permissions
 		{
@@ -139,8 +140,15 @@ impl Config
 		}
 		
 		let mut state = json::JsonValue::new_object();
-		let _ = state.insert("settings", settings);
 		let _ = state.insert("permissions", permissions);
+
+		let _ = state.insert("settings", json::object!
+		{
+			extendedPlayers: self.extendedPlayers,
+			port: self.port,
+			tickRate: self.tickRate,
+			firstCP: self.firstCheckpoint.clone()
+		});
 		
 		match std::fs::write("res/system/config.json", json::stringify_pretty(state, 4))
 		{

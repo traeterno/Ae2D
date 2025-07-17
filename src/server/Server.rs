@@ -39,7 +39,7 @@ impl Server
 	pub fn init() -> Self
 	{
 		let config = Config::init();
-		let state = State::init();
+		let state = State::init(&config);
 
 		let listener = TcpListener::bind(String::from("0.0.0.0:") + &config.port.to_string());
 		if listener.is_err() { panic!("Failed to create listener: {:?}", listener.unwrap_err()); }
@@ -245,11 +245,21 @@ impl Server
 					for c in &self.clients
 					{
 						if c.id == 0 { continue; }
+						
+						let class = match c.class.as_str()
+						{
+							"sorcerer" => "Маг",
+							"thief" => "Вор",
+							"knight" => "Рыцарь",
+							"engineer" => "Инженер",
+							"bard" => "Бард",
+							_ => "Неизвестный"
+						};
 
 						let _ = obj.push(json::object!
 						{
 							id: c.id,
-							className: c.class.clone(),
+							className: class,
 							name: c.name.clone(),
 							hp: { current: 100, max: 100 },
 							mana: { current: 100, max: 100 }
@@ -334,6 +344,12 @@ impl Server
 							name: "Частота обновления",
 							value: self.config.tickRate,
 							props: json::object! { min: 1, max: 100 }
+						},
+						firstCP: json::object!
+						{
+							type: "string",
+							name: "Начальный чекпоинт",
+							value: self.config.firstCheckpoint.clone(),
 						}
 					});
 

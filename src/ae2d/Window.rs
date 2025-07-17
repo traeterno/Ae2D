@@ -189,7 +189,11 @@ impl Window
 		{
 			match event
 			{
-				glfw::WindowEvent::Close => window.set_should_close(true),
+				glfw::WindowEvent::Close =>
+				{
+					window.set_should_close(true);
+					i.net = Network::new();
+				}
 				glfw::WindowEvent::MouseButton(b, a, m) =>
 				{
 					i.mouseEvent = Some((b, a, m));
