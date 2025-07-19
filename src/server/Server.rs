@@ -388,12 +388,6 @@ impl Server
 							type: "string",
 							name: "Начальный чекпоинт",
 							value: self.config.firstCheckpoint.clone(),
-						},
-						name: json::object!
-						{
-							type: "string",
-							name: "Имя сервера",
-							value: self.config.name.clone()
 						}
 					});
 
