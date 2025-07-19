@@ -251,7 +251,9 @@ impl Network
 			}
 			3 =>
 			{
-				Some(ClientMessage::Chat(String::from_utf8_lossy(buffer).to_string()))
+				Some(ClientMessage::Chat(
+					String::from_utf8_lossy(&buffer[1..buffer.len()]).to_string()
+				))
 			}
 			5 =>
 			{
