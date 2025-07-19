@@ -20,7 +20,9 @@ pub struct Server
 	udp: UdpSocket,
 	playersState: Vec<[u8; 9]>,
 	sendTimer: Instant,
-	recvTimer: Instant
+	recvTimer: Instant,
+	udpBC: UdpSocket,
+	visible: bool
 }
 
 impl Server
@@ -65,8 +67,18 @@ impl Server
 		let udp = udp.unwrap();
 		let _ = udp.set_nonblocking(true);
 
+		let bc = UdpSocket::bind("0.0.0.0:26225");
+		if bc.is_err()
+		{
+			panic!("Failed to bind UDP Broadcast: {:?}", bc.unwrap_err());
+		}
+		let bc = bc.unwrap();
+		let _ = bc.set_nonblocking(true);
+		let _ = bc.set_broadcast(true);
+
 		println!("TCP Listener: {}", listener.local_addr().unwrap());
 		println!("UDP Socket: {}", udp.local_addr().unwrap());
+		println!("UDP Broadcast socket: {}", bc.local_addr().unwrap());
 
 		Self
 		{
@@ -81,7 +93,9 @@ impl Server
 			udp,
 			playersState,
 			sendTimer: Instant::now(),
-			recvTimer: Instant::now()
+			recvTimer: Instant::now(),
+			udpBC: bc,
+			visible: false
 		}
 	}
 
@@ -114,6 +128,30 @@ impl Server
 			{
 				Ok(tcp) => self.webClient.connect(tcp),
 				Err(_) => break
+			}
+		}
+
+		if self.udpBC.broadcast().unwrap()
+		{
+			let mut buf = [0u8; 64];
+			match self.udpBC.recv_from(&mut buf)
+			{
+				Ok((_, addr)) =>
+				{
+					if !self.visible { return; }
+					let _ = self.udpBC.send_to(
+						&self.listener.local_addr().unwrap().port().to_le_bytes() as &[u8],
+						addr
+					);
+				}
+				Err(x) =>
+				{
+					match x.kind()
+					{
+						std::io::ErrorKind::WouldBlock => {}
+						_ => println!("Error occured: {x:?}")
+					}
+				}
 			}
 		}
 	}
@@ -350,6 +388,12 @@ impl Server
 							type: "string",
 							name: "Начальный чекпоинт",
 							value: self.config.firstCheckpoint.clone(),
+						},
+						name: json::object!
+						{
+							type: "string",
+							name: "Имя сервера",
+							value: self.config.name.clone()
 						}
 					});
 
@@ -555,6 +599,11 @@ impl Server
 		{
 			self.save(args.nth(0).unwrap().to_string());
 		}
+	}
+
+	pub fn setVisible(&mut self, visible: bool)
+	{
+		self.visible = visible;
 	}
 
 	pub fn getWebClient(&mut self) -> &mut WebClient { &mut self.webClient }

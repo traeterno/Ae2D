@@ -529,6 +529,32 @@ pub fn network(s: &Lua)
 	{
 		Ok(Window::getNetwork().tcp.as_mut().unwrap().peer_addr().unwrap().to_string())
 	}).unwrap());
+	
+	let _ = t.raw_set("findServer",
+	s.create_function(|_, _: ()|
+	{
+		let s = UdpSocket::bind("0.0.0.0:0").unwrap();
+		let _ = s.set_broadcast(true);
+		let _ = s.send_to(&[], "255.255.255.255:26225");
+		let mut buffer = [0u8; 256];
+		let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+		match s.recv_from(&mut buffer)
+		{
+			Ok((_, addr)) =>
+			{
+				let ip = addr.ip().to_string() + ":" +
+					&u16::from_le_bytes([buffer[0], buffer[1]]).to_string();
+				return Ok(ip);
+			}
+			Err(x) => match x.kind()
+			{
+				std::io::ErrorKind::WouldBlock => {}
+				std::io::ErrorKind::TimedOut => {}
+				_ => println!("Список серверов не был получен: {x:?}")
+			}
+		}
+		Ok(String::new())
+	}).unwrap());
 
 	let _ = s.globals().set("network", t);
 }

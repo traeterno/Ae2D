@@ -170,6 +170,10 @@ impl WebClient
 				{
 					cfg.firstCheckpoint = value.as_str().unwrap().to_string();
 				}
+				else if var == "name"
+				{
+					cfg.name = value.as_str().unwrap().to_string();
+				}
 				else
 				{
 					cfg.setPermission(var.to_string(),

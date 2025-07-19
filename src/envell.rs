@@ -6,8 +6,7 @@ use server::Server::Server;
 fn main()
 {
 	let server = Server::getInstance();
-
-	println!("Server is running. Waiting for players...");
+	server.setVisible(true);
 
 	loop
 	{

@@ -39,7 +39,8 @@ pub struct Config
 	pub sendTime: Duration,
 	pub recvTime: Duration,
 	pub permissions: HashMap<String, Permission>,
-	pub firstCheckpoint: String
+	pub firstCheckpoint: String,
+	pub name: String
 }
 
 impl Default for Config
@@ -54,7 +55,8 @@ impl Default for Config
 			sendTime: Duration::from_secs(1),
 			recvTime: Duration::from_secs_f32(0.5),
 			permissions: HashMap::new(),
-			firstCheckpoint: String::new()
+			firstCheckpoint: String::from("main"),
+			name: String::from("Envell")
 		}
 	}
 }
@@ -95,6 +97,10 @@ impl Config
 					if name == "firstCP"
 					{
 						state.firstCheckpoint = value.as_str().unwrap().to_string();
+					}
+					if name == "name"
+					{
+						state.name = value.as_str().unwrap().to_string();
 					}
 				}
 			}
@@ -147,7 +153,8 @@ impl Config
 			extendedPlayers: self.extendedPlayers,
 			port: self.port,
 			tickRate: self.tickRate,
-			firstCP: self.firstCheckpoint.clone()
+			firstCP: self.firstCheckpoint.clone(),
+			name: self.name.clone()
 		});
 		
 		match std::fs::write("res/system/config.json", json::stringify_pretty(state, 4))

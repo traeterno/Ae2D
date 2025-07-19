@@ -96,7 +96,7 @@ impl Network
 			tickTime: Duration::from_secs(1),
 			mainState: PlayerState::default(),
 			state: vec![],
-			tcpHistory: vec![]
+			tcpHistory: vec![],
 		}
 	}
 
