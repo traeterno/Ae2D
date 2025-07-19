@@ -420,6 +420,12 @@ pub fn network(s: &Lua)
 					let _ = t.raw_set("id", *id);
 					found = true;
 				}
+				ClientMessage::Chat(message) =>
+				{
+					if msg != 3 { continue; }
+					let _ = t.raw_set("msg", message.clone());
+					found = true;
+				}
 				ClientMessage::GetInfo(udpPort, tickRate, checkpoints,
 					extendPlayers, players) =>
 				{
@@ -474,6 +480,11 @@ pub fn network(s: &Lua)
 			{
 				let name: String = x.1.get("name").unwrap();
 				[&[1u8], name.as_bytes()].concat()
+			}
+			2 =>
+			{
+				let msg: String = x.1.get("msg").unwrap();
+				[&[2u8], msg.as_bytes()].concat()
 			}
 			4 =>
 			{

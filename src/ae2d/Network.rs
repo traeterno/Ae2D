@@ -244,10 +244,14 @@ impl Network
 				).to_string();
 				
 				Some(ClientMessage::Login(id, name, class))
-			},
+			}
 			2 =>
 			{
 				Some(ClientMessage::Disconnected(buffer[1]))
+			}
+			3 =>
+			{
+				Some(ClientMessage::Chat(String::from_utf8_lossy(buffer).to_string()))
 			}
 			5 =>
 			{
