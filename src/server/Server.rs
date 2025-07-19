@@ -76,10 +76,6 @@ impl Server
 		let _ = bc.set_nonblocking(true);
 		let _ = bc.set_broadcast(true);
 
-		println!("TCP Listener: {}", listener.local_addr().unwrap());
-		println!("UDP Socket: {}", udp.local_addr().unwrap());
-		println!("UDP Broadcast socket: {}", bc.local_addr().unwrap());
-
 		Self
 		{
 			listener,
@@ -104,12 +100,11 @@ impl Server
 		if let Ok((tcp, addr)) = self.listener.accept()
 		{
 			let id = self.getAvailablePlayerID();
-			println!("New client: {addr}. Trying ID {id}...");
 			if id != 0
 			{
 				let (name, class) = self.state.getPlayerInfo(addr.ip());
-				if name == "noname" { println!("Unknown client."); }
-				else { println!("Player {name} connected as P{}.", id); }
+				if name == "noname" { println!("Новый игрок."); }
+				else { println!("Игрок {name} подключился, как P{}.", id); }
 
 				self.clients[(id - 1) as usize] = Client::connect(
 					tcp,
@@ -453,7 +448,6 @@ impl Server
 					};
 					let c = &mut self.clients[(id - 1) as usize];
 					if c.class == class { class = "unknown"; }
-					println!("Player {} selected avatar #{avatar}({class})", id);
 					c.class = class.to_string();
 					self.state.playersList.get_mut(
 						&c.tcp.as_mut().unwrap().peer_addr().unwrap().ip()
@@ -591,7 +585,10 @@ impl Server
 		}
 		else if c == "save"
 		{
-			self.save(args.nth(0).unwrap().to_string());
+			self.save(
+				args.nth(0).unwrap_or(&self.config.firstCheckpoint)
+				.to_string()
+			);
 		}
 	}
 

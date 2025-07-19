@@ -8,6 +8,8 @@ fn main()
 	let server = Server::getInstance();
 	server.setVisible(true);
 
+	println!("Сервер запущен. Ждём игроков...");
+
 	loop
 	{
 		server.listen();

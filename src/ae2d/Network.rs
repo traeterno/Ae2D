@@ -201,7 +201,6 @@ impl Network
 				{
 					if let Some(msg) = Network::parse(&buf[0..size])
 					{
-						println!("New message: {msg:?}");
 						net.tcpHistory.push(msg);
 					}
 				},
@@ -303,7 +302,11 @@ impl Network
 					String::from_utf8_lossy(&buffer[2..buffer.len()]).to_string()
 				))
 			}
-			_ => None
+			x =>
+			{
+				println!("Unexpected package ID: {x}");
+				None
+			}
 		}
 	}
 }

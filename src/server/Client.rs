@@ -63,7 +63,7 @@ impl Client
 					ErrorKind::WouldBlock => { return None; },
 					_ =>
 					{
-						println!("Error occured on player {}: {x}", self.name);
+						println!("Error occured on player {}: {x:?}", self.name);
 						self.tcp = None;
 						return Some(ServerMessage::Disconnected);
 					}
