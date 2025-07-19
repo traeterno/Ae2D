@@ -325,13 +325,17 @@ pub fn network(s: &Lua)
 	{
 		let net = Window::getNetwork();
 
-		let tcp = TcpStream::connect(addr);
+		let tcp = TcpStream::connect_timeout(
+			&addr.parse().unwrap(),
+			std::time::Duration::from_secs(5)
+		);
 		if tcp.is_err()
 		{
 			println!("TCP failed: {}", tcp.unwrap_err());
 			return Ok(false);
 		}
 		let tcp = tcp.unwrap();
+		let _ = tcp.set_nodelay(true);
 
 		let udp = UdpSocket::bind("0.0.0.0:0");
 		if udp.is_err()
