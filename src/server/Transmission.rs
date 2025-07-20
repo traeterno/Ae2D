@@ -63,10 +63,10 @@ impl ClientMessage
 				id, name, class) => [
 					&[1u8], &[id],
 					name.as_bytes(), &[0u8],
-					class.as_bytes()
+					class.as_bytes(),  &[0u8]
 				].concat().to_vec(),
 			Self::Disconnected(id) => vec![2u8, id],
-			Self::Chat(text) => [&[3u8], text.as_bytes()].concat().to_vec(),
+			Self::Chat(text) => [&[3u8], text.as_bytes(), &[0u8]].concat().to_vec(),
 			Self::SetPosition(x, y) => [&[4u8] as &[u8],
 					&x.to_le_bytes(), &y.to_le_bytes()
 				].concat().to_vec(),
@@ -78,12 +78,13 @@ impl ClientMessage
 
 				for p in playersList { players = players + &p + "|"; }
 				[
-					&[5u8] as &[u8], &udp.to_le_bytes(), &[tickRate],
-					&[extendPlayers as u8], players.as_bytes(), &[0u8], checkpoint.as_bytes()
+					&[5u8] as &[u8], &udp.to_le_bytes(), &[tickRate], &[extendPlayers as u8],
+					players.as_bytes(), &[0u8],
+					checkpoint.as_bytes(), &[0u8]
 				].concat().to_vec()
 			},
 			Self::SelectChar(id, class) => [&[6u8],
-					&[id], class.as_bytes()
+					&[id], class.as_bytes(), &[0u8]
 				].concat().to_vec(),
 			Self::GameReady(ready) => vec![7u8, ready]
 		}

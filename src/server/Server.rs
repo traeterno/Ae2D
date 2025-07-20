@@ -621,18 +621,19 @@ impl Server
 		else if c == "kick"
 		{
 			let target = args.nth(0).unwrap_or(&name);
+			println!("{target}");
 			for i in 0..self.clients.len()
 			{
-				if self.clients[i].name == target
+				if self.clients[i].name.to_lowercase() == target.to_lowercase()
 				{
 					self.broadcast.push(ClientMessage::Disconnected((i + 1) as u8));
-					self.broadcast.push(ClientMessage::Chat(
-						if target == name
+					let msg = if target == name
 						{
 							format!("Игрок {target} прострелил себе колено.")
 						}
-						else { format!("Игрок {name} выгнал из игры {target}.") }
-					));
+						else { format!("Игрок {name} выгнал из игры {target}.") };
+					self.broadcast.push(ClientMessage::Chat(msg.clone()));
+					self.state.chatHistory.push((String::new(), msg));
 					self.updateReady();
 				}
 			}

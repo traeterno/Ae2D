@@ -200,16 +200,7 @@ impl Network
 				{
 					Ok(size) =>
 					{
-						if size == 0
-						{
-							net.tcpHistory.push(ClientMessage::Disconnected(net.id));
-							continue;
-						}
-						println!("{:?}", &buf[0..size]);
-						if let Some(msg) = Network::parse(&buf[0..size])
-						{
-							net.tcpHistory.push(msg);
-						}
+						net.tcpHistory.append(&mut Network::parse(&buf[0..size]));
 					},
 					Err(x) =>
 					{
@@ -230,83 +221,140 @@ impl Network
 		}
 	}
 
-	fn parse(buffer: &[u8]) -> Option<ClientMessage>
+	fn parse(buffer: &[u8]) -> Vec<ClientMessage>
 	{
-		return match buffer[0]
+		let mut out = vec![];
+		let mut current = 0;
+		while current < buffer.len()
 		{
-			1 =>
+			match buffer[current]
 			{
-				let id = buffer[1];
-
-				let name =
+				1 =>
 				{
-					let mut len = 0;
-					while buffer[2 + len] != 0 { len += 1; }
-					String::from_utf8_lossy(
-						&buffer[2..2 + len]
-					).to_string()
-				};
+					let id = buffer[current + 1];
+					let name =
+					{
+						let mut len = 0;
+						while buffer[current + 2 + len] != 0
+						{
+							len += 1;
+						}
+						String::from_utf8_lossy(
+							&buffer[current + 2..current + 2 + len]
+						).to_string()
+					};
 
-				let class = String::from_utf8_lossy(
-					&buffer[3 + name.len()..buffer.len()]
-				).to_string();
-				
-				Some(ClientMessage::Login(id, name, class))
-			}
-			2 =>
-			{
-				Some(ClientMessage::Disconnected(buffer[1]))
-			}
-			3 =>
-			{
-				Some(ClientMessage::Chat(
-					String::from_utf8_lossy(&buffer[1..buffer.len()]).to_string()
-				))
-			}
-			5 =>
-			{
-				let udpPort = u16::from_le_bytes([buffer[1], buffer[2]]);
-				let tickRate = buffer[3];
-				let extendPlayers = buffer[4] != 0;
-				
-				let players =
+					let class =
+					{
+						let mut len = 0;
+						while buffer[current + name.len() + 3 + len] != 0
+						{
+							len += 1;
+						}
+						String::from_utf8_lossy(&buffer[
+							current + name.len() + 3..
+							current + name.len() + 3 + len
+						]).to_string()
+					};
+					current += 1 + 1 + name.len() + 1 + class.len() + 1;
+					out.push(ClientMessage::Login(id, name, class));
+				}
+				5 =>
 				{
-					let mut v = vec![];
-					let mut len = 0;
-					while buffer[5 + len] != 0 { len += 1; }
-					len -= 1;
-					let raw = String::from_utf8_lossy(&buffer[5..5 + len]).to_string();
-					for p in raw.split("|") { v.push(p.to_string()) }
-					v
-				};
+					let port = u16::from_le_bytes([
+						buffer[current + 1],
+						buffer[current + 2]
+					]);
+					let tickRate = buffer[current + 3];
+					let extended = buffer[current + 4] != 0;
 
-				let pl =
+					let mut pl = 0;
+					let players =
+					{
+						let mut v = vec![];
+						while buffer[current + 5 + pl] != 0
+						{
+							pl += 1;
+						}
+						let raw = String::from_utf8_lossy(&buffer[
+							current + 5..
+							current + 5 + pl
+						]).to_string();
+						for p in raw.split("|")
+						{
+							if p.is_empty() { continue; }
+							v.push(p.to_string());
+						}
+						v
+					};
+
+					let checkpoint =
+					{
+						let mut len = 0;
+						while buffer[current + 6 + pl + len] != 0
+						{
+							len += 1;
+						}
+
+						String::from_utf8_lossy(&buffer[
+							current + 6 + pl..
+							current + 6 + pl + len
+						]).to_string()
+					};
+
+					current += 1 + 2 + 1 + 1 + pl + 1 + checkpoint.len() + 1;
+					out.push(ClientMessage::GetInfo(port, tickRate, checkpoint, extended, players));
+				}
+				2 =>
 				{
-					let mut size = 0;
-					for p in &players { size += p.len(); }
-					size
-				};
-
-				let checkpoint = String::from_utf8_lossy(
-					&buffer[7 + pl..buffer.len()]).to_string();
-				
-				Some(ClientMessage::GetInfo(
-					udpPort, tickRate, checkpoint, extendPlayers, players
-				))
-			},
-			6 =>
-			{
-				Some(ClientMessage::SelectChar(
-					buffer[1],
-					String::from_utf8_lossy(&buffer[2..buffer.len()]).to_string()
-				))
-			}
-			7 => Some(ClientMessage::GameReady(buffer[1])),
-			x =>
-			{
-				println!("Unexpected package ID: {x}");
-				None
+					let id = buffer[current + 1];
+					current += 1 + 1;
+					out.push(ClientMessage::Disconnected(id));
+				}
+				3 =>
+				{
+					let msg =
+					{
+						let mut len = 0;
+						while buffer[current + 1 + len] != 0
+						{
+							len += 1;
+						}
+						String::from_utf8_lossy(&buffer[
+							current + 1..
+							current + 1 + len
+						]).to_string()
+					};
+					current += 1 + msg.len() + 1;
+					out.push(ClientMessage::Chat(msg));
+				}
+				6 =>
+				{
+					let id = buffer[current + 1];
+					let class =
+					{
+						let mut len = 0;
+						while buffer[current + 2 + len] != 0
+						{
+							len += 1;
+						}
+						String::from_utf8_lossy(&buffer[
+							current + 2..
+							current + 2 + len
+						]).to_string()
+					};
+					current += 1 + 1 + class.len() + 1;
+					out.push(ClientMessage::SelectChar(id, class));
+				}
+				7 =>
+				{
+					let state = buffer[current + 1];
+					out.push(ClientMessage::GameReady(state));
+					current += 1 + 1;
+				}
+				_ => { current += 1; }
 			}
 		}
+		out
 	}
 }
