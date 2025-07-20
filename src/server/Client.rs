@@ -60,7 +60,8 @@ impl Client
 			{
 				match x.kind()
 				{
-					ErrorKind::WouldBlock => { return None; },
+					ErrorKind::WouldBlock => return None,
+					ErrorKind::ConnectionReset => return Some(ServerMessage::Disconnected),
 					_ =>
 					{
 						println!("Error occured on player {}: {x:?}", self.name);

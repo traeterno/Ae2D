@@ -156,10 +156,6 @@ impl WebClient
 				{
 					cfg.extendedPlayers = value.as_bool().unwrap_or(false);
 				}
-				else if var == "port"
-				{
-					cfg.port = value.as_u16().unwrap_or(2018);
-				}
 				else if var == "tickRate"
 				{
 					cfg.tickRate = value.as_u8().unwrap_or(1);

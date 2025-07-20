@@ -22,7 +22,7 @@ pub struct Server
 	sendTimer: Instant,
 	recvTimer: Instant,
 	udpBC: UdpSocket,
-	visible: bool
+	started: bool
 }
 
 impl Server
@@ -43,7 +43,7 @@ impl Server
 		let config = Config::init();
 		let state = State::init(&config);
 
-		let listener = TcpListener::bind(String::from("0.0.0.0:") + &config.port.to_string());
+		let listener = TcpListener::bind(String::from("0.0.0.0:0"));
 		if listener.is_err() { panic!("Failed to create listener: {:?}", listener.unwrap_err()); }
 		let listener = listener.unwrap();
 		let _ = listener.set_nonblocking(true);
@@ -91,7 +91,7 @@ impl Server
 			sendTimer: Instant::now(),
 			recvTimer: Instant::now(),
 			udpBC: bc,
-			visible: false
+			started: false
 		}
 	}
 
@@ -106,6 +106,11 @@ impl Server
 				if name == "noname" { println!("Новый игрок."); }
 				else { println!("Игрок {name} подключился, как P{}.", id); }
 
+				let class = self.checkClass(
+					String::from("unknown"),
+					class.clone()
+				);
+
 				self.clients[(id - 1) as usize] = Client::connect(
 					tcp,
 					id,
@@ -113,7 +118,8 @@ impl Server
 					class.clone()
 				);
 
-				self.broadcast.push(ClientMessage::Login(id, name, class))
+				self.broadcast.push(ClientMessage::Login(id, name, class));
+				self.updateReady();
 			}
 		}
 
@@ -133,7 +139,7 @@ impl Server
 			{
 				Ok((_, addr)) =>
 				{
-					if !self.visible { return; }
+					if self.started { return; }
 					let _ = self.udpBC.send_to(
 						&self.listener.local_addr().unwrap().port().to_le_bytes() as &[u8],
 						addr
@@ -236,17 +242,37 @@ impl Server
 					);
 
 					self.config.setPermission(name.clone(), Permission::Player);
+					for c in &mut self.clients
+					{
+						if c.id != 0 { c.sendTCP(ClientMessage::GameReady(0)); break; }
+					}
 
-					println!("Welcome, {name}(P{id})!");
+					println!("Добро пожаловать, {name}(P{id})!");
 				},
 				ServerMessage::Disconnected =>
 				{
 					if id != 0
 					{
-						println!("P{} disconnected.", id);
+						println!("P{} вышел из игры.", id);
 						self.clients[(id - 1) as usize] = Client::default();
 						self.playersState[(id - 1) as usize][0] = id;
 						self.broadcast.push(ClientMessage::Disconnected(id));
+
+						let mut check = true;
+						for c in &self.clients
+						{
+							if c.id != 0 { check = false; }
+						}
+						if check
+						{
+							println!("Все вышли из игры.");
+							if self.started
+							{
+								println!("Возвращаемся в меню выбора персонажей...");
+								self.started = false;
+							}
+						}
+						self.updateReady();
 					}
 				},
 				ServerMessage::Chat(msg, web) =>
@@ -337,7 +363,7 @@ impl Server
 						title: "Сохранение",
 						props: json::object!
 						{
-							"Чекпоинт": self.state.lastCheckpoint.as_str(),
+							"Чекпоинт": self.state.checkpoint.clone(),
 							"Дата сохранения": self.state.date.as_str()
 						}
 					});
@@ -363,13 +389,6 @@ impl Server
 							type: "toggle",
 							name: "Расширить количество игроков",
 							value: self.config.extendedPlayers
-						},
-						port: json::object!
-						{
-							type: "range",
-							name: "Игровой порт",
-							value: self.config.port,
-							props: json::object! { min: 1024, max: u16::MAX }
 						},
 						tickRate: json::object!
 						{
@@ -430,29 +449,38 @@ impl Server
 					self.clients[(id - 1) as usize].sendTCP(ClientMessage::GetInfo(
 						self.udp.local_addr().unwrap().port(),
 						self.config.tickRate,
-						self.state.checkpoints.clone(),
+						self.state.checkpoint.clone(),
 						self.config.extendedPlayers, players
 					));
 				},
 				ServerMessage::SelectChar(avatar) =>
 				{
 					let avatar = (avatar - 1) % 5;
-					let mut class = match avatar
-					{
-						0 => "sorcerer",
-						1 => "thief",
-						2 => "knight",
-						3 => "engineer",
-						4 => "bard",
-						_ => "unknown"
-					};
+					let class = self.checkClass(
+						self.clients[(id - 1) as usize].class.clone(),
+						match avatar
+						{
+							0 => "sorcerer",
+							1 => "thief",
+							2 => "knight",
+							3 => "engineer",
+							4 => "bard",
+							_ => "unknown"
+						}.to_string()
+					);
 					let c = &mut self.clients[(id - 1) as usize];
-					if c.class == class { class = "unknown"; }
 					c.class = class.to_string();
 					self.state.playersList.get_mut(
 						&c.tcp.as_mut().unwrap().peer_addr().unwrap().ip()
 					).unwrap().1 = c.class.clone();
 					self.broadcast.push(ClientMessage::SelectChar(id, class.to_string()));
+					self.updateReady();
+				},
+				ServerMessage::Start =>
+				{
+					self.broadcast.push(ClientMessage::GameReady(2));
+					self.setStarted(true);
+					println!("Игра началась.")
 				}
 			}
 		}
@@ -532,8 +560,8 @@ impl Server
 			));
 		}
 		let name =
-			if executor == 0 { &String::from("Центр мира") }
-			else { &self.clients[(executor - 1) as usize].name };
+			if executor == 0 { String::from("Центр мира") }
+			else { self.clients[(executor - 1) as usize].name.clone() };
 		let p = self.config.getPermission(&name);
 		println!("P{executor} ({name}, {}) вызвал '{txt}'", p.toString());
 		
@@ -579,7 +607,7 @@ impl Server
 		}
 		else if c == "gettime"
 		{
-			self.state.chatHistory.push((name.clone(),
+			self.state.chatHistory.push((name,
 				format!("Текущее время сервера: {}", State::getDateTime())
 			));
 		}
@@ -590,11 +618,59 @@ impl Server
 				.to_string()
 			);
 		}
+		else if c == "kick"
+		{
+			let target = args.nth(0).unwrap_or(&name);
+			for i in 0..self.clients.len()
+			{
+				if self.clients[i].name == target
+				{
+					self.broadcast.push(ClientMessage::Disconnected((i + 1) as u8));
+					self.broadcast.push(ClientMessage::Chat(
+						if target == name
+						{
+							format!("Игрок {target} прострелил себе колено.")
+						}
+						else { format!("Игрок {name} выгнал из игры {target}.") }
+					));
+					self.updateReady();
+				}
+			}
+		}
 	}
 
-	pub fn setVisible(&mut self, visible: bool)
+	pub fn setStarted(&mut self, started: bool)
 	{
-		self.visible = visible;
+		self.started = started;
+	}
+
+	pub fn checkClass(&self, previous: String, new: String) -> String
+	{
+		if previous == new { return String::from("unknown"); }
+		let mut count = 0;
+		for c in &self.clients
+		{
+			if c.class == new { count += 1; }
+		}
+		match count
+		{
+			0 => new,
+			1 => if self.config.extendedPlayers { new } else { previous },
+			_ => previous
+		}
+	}
+
+	pub fn updateReady(&mut self)
+	{
+		let mut ready = true;
+		for c in &self.clients
+		{
+			if c.class == "unknown" { ready = false; break; }
+		}
+		for c in &mut self.clients
+		{
+			if c.id != 0 { c.sendTCP(ClientMessage::GameReady(ready as u8)); break; }
+		}
 	}
 
 	pub fn getWebClient(&mut self) -> &mut WebClient { &mut self.webClient }

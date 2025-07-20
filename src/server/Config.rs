@@ -34,7 +34,6 @@ impl Permission
 pub struct Config
 {
 	pub extendedPlayers: bool,
-	pub port: u16,
 	pub tickRate: u8,
 	pub sendTime: Duration,
 	pub recvTime: Duration,
@@ -49,7 +48,6 @@ impl Default for Config
 		Self
 		{
 			extendedPlayers: false,
-			port: 0,
 			tickRate: 1,
 			sendTime: Duration::from_secs(1),
 			recvTime: Duration::from_secs_f32(0.5),
@@ -81,10 +79,6 @@ impl Config
 					if name == "extendedPlayers"
 					{
 						state.extendedPlayers = value.as_bool().unwrap();
-					}
-					if name == "port"
-					{
-						state.port = value.as_u16().unwrap();
 					}
 					if name == "tickRate"
 					{
@@ -145,7 +139,6 @@ impl Config
 		let _ = state.insert("settings", json::object!
 		{
 			extendedPlayers: self.extendedPlayers,
-			port: self.port,
 			tickRate: self.tickRate,
 			firstCP: self.firstCheckpoint.clone(),
 		});

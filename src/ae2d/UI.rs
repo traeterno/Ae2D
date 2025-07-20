@@ -1,6 +1,6 @@
 use mlua::{Function, Lua, Value};
 
-use super::{bind, Camera::Drawable, Sprite::Sprite, Text::Text, Window::Window};
+use super::{bind, Camera::Drawable, Sprite::Sprite, Text::Text};
 
 pub struct Object
 {
@@ -34,7 +34,7 @@ impl Object
 
 		bind::sprite(&obj.script);
 		bind::text(&obj.script);
-		Window::initLua(&obj.script);
+		bind::window(&obj.script);
 
 		let mut f = None;
 

@@ -16,7 +16,8 @@ pub enum ServerMessage
 	GetSettings(SocketAddr),
 	SaveSettings(SocketAddr),
 	GetInfo,
-	SelectChar(u8)
+	SelectChar(u8),
+	Start
 }
 
 impl ServerMessage
@@ -33,6 +34,7 @@ impl ServerMessage
 			3 => Self::SaveGame(String::from_utf8_lossy(&args).to_string()),
 			4 => Self::GetInfo,
 			5 => Self::SelectChar(args[0]),
+			6 => Self::Start,
 			_ => Self::Invalid("0.0.0.0:0".parse().unwrap())
 		}
 	}
@@ -46,8 +48,9 @@ pub enum ClientMessage
 	Disconnected(u8),
 	Chat(String),
 	SetPosition(u16, u16),
-	GetInfo(u16, u8, Vec<String>, bool, Vec<String>),
-	SelectChar(u8, String)
+	GetInfo(u16, u8, String, bool, Vec<String>),
+	SelectChar(u8, String),
+	GameReady(u8)
 }
 
 impl ClientMessage
@@ -68,22 +71,21 @@ impl ClientMessage
 					&x.to_le_bytes(), &y.to_le_bytes()
 				].concat().to_vec(),
 			Self::GetInfo(
-				udp, tickRate, checkpointList,
+				udp, tickRate, checkpoint,
 				extendPlayers, playersList) =>
 			{
 				let mut players = String::new();
-				let mut checkpoints = String::new();
 
 				for p in playersList { players = players + &p + "|"; }
-				for c in checkpointList { checkpoints = checkpoints + &c + "|"; }
 				[
 					&[5u8] as &[u8], &udp.to_le_bytes(), &[tickRate],
-					&[extendPlayers as u8], players.as_bytes(), &[0u8], checkpoints.as_bytes()
+					&[extendPlayers as u8], players.as_bytes(), &[0u8], checkpoint.as_bytes()
 				].concat().to_vec()
 			},
 			Self::SelectChar(id, class) => [&[6u8],
 					&[id], class.as_bytes()
-				].concat().to_vec()
+				].concat().to_vec(),
+			Self::GameReady(ready) => vec![7u8, ready]
 		}
 	}
 }

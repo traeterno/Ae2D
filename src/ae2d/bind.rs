@@ -2,7 +2,7 @@ use std::{io::Write, net::{TcpStream, UdpSocket}};
 
 use mlua::{Lua, Table};
 
-use crate::{ae2d::Network::Network, server::Transmission::ClientMessage};
+use crate::{ae2d::{Network::Network, Programmable::Variable}, server::Transmission::ClientMessage};
 
 use super::{Sprite::Sprite, Text::Text, Window::Window};
 
@@ -352,6 +352,18 @@ pub fn network(s: &Lua)
 		Ok(true)
 	}).unwrap());
 
+	let _ = t.raw_set("disconnect",
+	s.create_function(|_, _: ()|
+	{
+		let net = Window::getNetwork();
+		net.class = String::new();
+		net.id = 0;
+		net.name = String::new();
+		net.tcp = None;
+		net.udp = None;
+		Ok(())
+	}).unwrap());
+
 	let _ = t.raw_set("login",
 	s.create_function(|_, data: (u8, String, String)|
 	{
@@ -388,12 +400,13 @@ pub fn network(s: &Lua)
 		{
 			match msg
 			{
-				ClientMessage::Login(..) => if id == 1 { return Ok(true); }
-				ClientMessage::Disconnected(..) => if id == 2 { return Ok(true); }
-				ClientMessage::Chat(..) => if id == 3 { return Ok(true); }
-				ClientMessage::SetPosition(..) => if id == 4 { return Ok(true); }
-				ClientMessage::GetInfo(..) => if id == 5 { return Ok(true); },
-				ClientMessage::SelectChar(..) => if id == 6 { return Ok(true); }
+				ClientMessage::Login(..) => if id == 1 { return Ok(true) }
+				ClientMessage::Disconnected(..) => if id == 2 { return Ok(true) }
+				ClientMessage::Chat(..) => if id == 3 { return Ok(true) }
+				ClientMessage::SetPosition(..) => if id == 4 { return Ok(true) }
+				ClientMessage::GetInfo(..) => if id == 5 { return Ok(true) }
+				ClientMessage::SelectChar(..) => if id == 6 { return Ok(true) }
+				ClientMessage::GameReady(..) => if id == 7 { return Ok(true) }
 			}
 		}
 		Ok(false)
@@ -430,16 +443,14 @@ pub fn network(s: &Lua)
 					let _ = t.raw_set("msg", message.clone());
 					found = true;
 				}
-				ClientMessage::GetInfo(udpPort, tickRate, checkpoints,
+				ClientMessage::GetInfo(udpPort, tickRate, checkpoint,
 					extendPlayers, players) =>
 				{
 					if msg != 5 { continue; }
 					let _ = t.raw_set("udpPort", *udpPort);
 					let _ = t.raw_set("tickRate", *tickRate);
 					let _ = t.raw_set("extendPlayers", *extendPlayers);
-					let c = s.create_table().unwrap();
-					for cp in checkpoints { let _ = c.raw_push(cp.clone()); }
-					let _ = t.raw_set("checkpoints", c);
+					let _ = t.raw_set("checkpoint", checkpoint.clone());
 					let p = s.create_table().unwrap();
 					for pl in players
 					{
@@ -466,6 +477,12 @@ pub fn network(s: &Lua)
 					let _ = t.raw_set("class", class.clone());
 					found = true;
 				},
+				ClientMessage::GameReady(ready) =>
+				{
+					if msg != 7 { continue; }
+					let _ = t.raw_set("ready", *ready);
+					found = true;
+				}
 				_ => {}
 			}
 			if found { net.tcpHistory.swap_remove(i); break; }
@@ -498,6 +515,10 @@ pub fn network(s: &Lua)
 			{
 				let id: u8 = x.1.get("id").unwrap();
 				[5u8, id].to_vec()
+			}
+			6 =>
+			{
+				[6u8].to_vec()
 			}
 			_ => vec![]
 		});
@@ -557,4 +578,147 @@ pub fn network(s: &Lua)
 	}).unwrap());
 
 	let _ = s.globals().set("network", t);
+}
+
+pub fn window(script: &Lua)
+{
+	let table = script.create_table().unwrap();
+
+	let _ = table.raw_set("size",
+	script.create_function(|_, _: ()|
+	{
+		Ok(Window::getSize())
+	}).unwrap());
+
+	let _ = table.raw_set("dt",
+	script.create_function(|_, _: ()|
+	{
+		Ok(Window::getDeltaTime())
+	}).unwrap());
+
+	let _ = table.raw_set("getNum",
+	script.create_function(|_, name: String|
+	{
+		Ok(Window::getInstance().prog.get(&name)
+			.unwrap_or(&Variable::default()).num)
+	}).unwrap());
+
+	let _ = table.raw_set("getStr",
+	script.create_function(|_, name: String|
+	{
+		Ok(Window::getInstance().prog.get(&name)
+			.unwrap_or(&Variable::default()).string.clone())
+	}).unwrap());
+	
+	let _ = table.raw_set("setNum",
+	script.create_function(|_, x: (String, f32)|
+	{
+		Window::getInstance().prog.insert(
+			x.0,
+			Variable { num: x.1, string: String::new() }
+		);
+		Ok(())
+	}).unwrap());
+	
+	let _ = table.raw_set("setStr",
+	script.create_function(|_, x: (String, String)|
+	{
+		Window::getInstance().prog.insert(
+			x.0,
+			Variable { num: 0.0, string: x.1 }
+		);
+		Ok(())
+	}).unwrap());
+
+	let _ = table.raw_set("mousePos",
+	script.create_function(|_, _: ()|
+	{
+		Ok(Window::getInstance().window.as_ref().unwrap().get_cursor_pos())
+	}).unwrap());
+	
+	let _ = table.raw_set("mousePressed",
+	script.create_function(|_, name: String|
+	{
+		Ok(Window::getInstance().window.as_ref().unwrap()
+			.get_mouse_button(Window::strToMB(name)) == glfw::Action::Press)
+	}).unwrap());
+
+	let _ = table.raw_set("mouseJustPressed",
+	script.create_function(|_, name: String|
+	{
+		let e = Window::getInstance().mouseEvent;
+		if e.is_none() { return Ok(false); }
+		let e = e.unwrap();
+		Ok(e.0 == Window::strToMB(name) && e.1 == glfw::Action::Press)
+	}).unwrap());
+	
+	let _ = table.raw_set("keyPressed",
+	script.create_function(|_, name: String|
+	{
+		Ok(Window::getInstance().window.as_ref().unwrap()
+			.get_key(Window::strToKey(name)) == glfw::Action::Press)
+	}).unwrap());
+	
+	let _ = table.raw_set("keyJustPressed",
+	script.create_function(|_, name: String|
+	{
+		let e = Window::getInstance().keyEvent;
+		if e.is_none() { return Ok(false); }
+		let e = e.unwrap();
+		Ok(e.0 == Window::strToKey(name) && e.1 == glfw::Action::Press)
+	}).unwrap());
+	
+	let _ = table.raw_set("keyModPressed",
+	script.create_function(|_, name: String|
+	{
+		let e = Window::getInstance().keyEvent;
+		if e.is_none() { return Ok(false); }
+		Ok(e.unwrap().2.intersects(Window::strToMod(name)))
+	}).unwrap());
+
+	let _ = table.raw_set("close",
+	script.create_function(|_, _: ()|
+	{
+		Window::close(); Ok(())
+	}).unwrap());
+	
+	let _ = table.raw_set("execute",
+	script.create_function(|s, code: String|
+	{
+		let _ = s.load(code).exec();
+		Ok(())
+	}).unwrap());
+
+	let _ = table.set("loadUI",
+	script.create_function(|_, path: String|
+	{
+		Window::getUI().requestLoad(path);
+		Ok(())
+	}).unwrap());
+
+	let _ = table.set("uiSize",
+	script.create_function(|_, _: ()|
+	{
+		let s = Window::getUI().getSize();
+		Ok((s.x, s.y))
+	}).unwrap());
+
+	let _ = table.raw_set("input",
+	script.create_function(|_, _: ()|
+	{
+		let x = Window::getInstance().inputEvent;
+		if let Some(c) = x { Ok(c.to_string()) }
+		else { Ok(String::new()) }
+	}).unwrap());
+
+	let _ = table.raw_set("clipboard",
+	script.create_function(|_, _: ()|
+	{
+		Ok(Window::getInstance().window.as_mut().unwrap()
+			.get_clipboard_string().unwrap_or_default())
+	}).unwrap());
+
+	let _ = script.globals().set("window", table);
+
+	network(script);
 }

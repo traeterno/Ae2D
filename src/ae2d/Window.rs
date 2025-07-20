@@ -1,27 +1,26 @@
 use std::collections::HashMap;
 use glfw::Context;
-use mlua::{Error, Lua};
 
-use crate::ae2d::{bind, Network::Network};
+use crate::ae2d::Network::Network;
 
 use super::{Camera::Camera, Programmable::{Programmable, Variable}, UI::UI};
 
 pub struct Window
 {
 	context: glfw::Glfw,
-	window: Option<glfw::PWindow>,
+	pub window: Option<glfw::PWindow>,
 	events: Option<glfw::GlfwReceiver<(f64, glfw::WindowEvent)>>,
 	_palette: HashMap<String, glam::Vec4>,
 	deltaTime: f32,
 	lastTime: std::time::Instant,
-	prog: Programmable,
-	mouseEvent: Option<(glfw::MouseButton, glfw::Action, glfw::Modifiers)>,
-	keyEvent: Option<(glfw::Key, glfw::Action, glfw::Modifiers)>,
+	pub prog: Programmable,
+	pub mouseEvent: Option<(glfw::MouseButton, glfw::Action, glfw::Modifiers)>,
+	pub keyEvent: Option<(glfw::Key, glfw::Action, glfw::Modifiers)>,
+	pub inputEvent: Option<char>,
 	cam: Camera,
 	textures: HashMap<String, u32>,
 	ui: UI,
-	net: Network,
-	inputEvent: Option<char>
+	net: Network
 }
 
 impl Window
@@ -48,17 +47,12 @@ impl Window
 		}
 	}
 
-	fn getInstance() -> &'static mut Window
+	pub fn getInstance() -> &'static mut Window
 	{
 		static mut INSTANCE: Option<Window> = None;
-		
 		unsafe
 		{
-			if INSTANCE.is_none()
-			{
-				println!("Initializing Window");
-				INSTANCE = Some(Window::default());
-			}
+			if INSTANCE.is_none() { INSTANCE = Some(Window::default()); }
 			INSTANCE.as_mut().unwrap()
 		}
 	}
@@ -267,143 +261,7 @@ impl Window
 		Window::getInstance().lastTime = std::time::Instant::now();
 	}
 
-	fn sizeFN(_: &Lua, _: ()) -> Result<(i32, i32), Error>
-	{
-		Ok(Window::getSize())
-	}
-
-	fn dtFN(_: &Lua, _: ()) -> Result<f32, Error> { Ok(Window::getDeltaTime()) }
-
-	fn getNumFN(_: &Lua, name: String) -> Result<f32, Error>
-	{
-		Ok(Window::getInstance().prog.get(&name)
-			.unwrap_or(&Variable::new()).num)
-	}
-
-	fn getStrFN(_: &Lua, name: String) -> Result<String, Error>
-	{
-		Ok(Window::getInstance().prog.get(&name)
-			.unwrap_or(&Variable::new()).string.clone())
-	}
-
-	fn setNumFN(_: &Lua, options: (String, f32)) -> Result<(), Error>
-	{
-		Window::getInstance().prog.insert(
-			options.0,
-			Variable { num: options.1, string: String::new() }
-		);
-		Ok(())
-	}
-
-	fn setStrFN(_: &Lua, options: (String, String)) -> Result<(), Error>
-	{
-		Window::getInstance().prog.insert(
-			options.0,
-			Variable { num: 0.0, string: options.1 }
-		);
-		Ok(())
-	}
-
-	fn mousePosFN(_: &Lua, _: ()) -> Result<(i32, i32), Error>
-	{
-		let p = Window::getInstance().window.as_ref().unwrap()
-			.get_cursor_pos();
-		Ok((p.0 as i32, p.1 as i32))
-	}
-
-	fn mousePressedFN(_: &Lua, name: String) -> Result<bool, Error>
-	{
-		let btn = Window::strToMB(name);
-		Ok(Window::getInstance().window.as_ref().unwrap()
-			.get_mouse_button(btn) == glfw::Action::Press)
-	}
-
-	fn mouseJustPressedFN(_: &Lua, name: String) -> Result<bool, Error>
-	{
-		let e = Window::getInstance().mouseEvent;
-		if e.is_none() { return Ok(false); }
-		let e = e.unwrap();
-		let btn = Window::strToMB(name);
-		Ok(e.0 == btn && e.1 == glfw::Action::Press)
-	}
-
-	fn keyPressedFN(_: &Lua, name: String) -> Result<bool, Error>
-	{
-		Ok(Window::getInstance().window.as_ref().unwrap()
-			.get_key(Window::strToKey(name)) == glfw::Action::Press)
-	}
-
-	fn keyJustPressedFN(_: &Lua, name: String) -> Result<bool, Error>
-	{
-		let e = Window::getInstance().keyEvent;
-		if e.is_none() { return Ok(false); }
-		let e = e.unwrap();
-		Ok(e.0 == Window::strToKey(name) && e.1 == glfw::Action::Press)
-	}
-
-	fn keyModPressedFN(_: &Lua, name: String) -> Result<bool, Error>
-	{
-		let e = Window::getInstance().keyEvent;
-		if e.is_none() { return Ok(false); }
-		let e = e.unwrap();
-		Ok(e.2.intersects(Window::strToMod(name)))
-	}
-
-	fn closeFN(_: &Lua, _: ()) -> Result<(), Error> { Window::close(); Ok(()) }
-
-	fn executeFN(state: &Lua, code: String) -> Result<(), Error>
-	{
-		let _ = state.load(code).exec();
-		Ok(())
-	}
-
-	pub fn initLua(script: &Lua)
-	{
-		let table = script.create_table().unwrap();
-
-		let _ = table.set("size", script.create_function(Window::sizeFN).unwrap());
-		let _ = table.set("dt", script.create_function(Window::dtFN).unwrap());
-		let _ = table.set("getNum", script.create_function(Window::getNumFN).unwrap());
-		let _ = table.set("getStr", script.create_function(Window::getStrFN).unwrap());
-		let _ = table.set("setNum", script.create_function(Window::setNumFN).unwrap());
-		let _ = table.set("setStr", script.create_function(Window::setStrFN).unwrap());
-		let _ = table.set("mousePos", script.create_function(Window::mousePosFN).unwrap());
-		let _ = table.set("mousePressed", script.create_function(Window::mousePressedFN).unwrap());
-		let _ = table.set("mouseJustPressed", script.create_function(Window::mouseJustPressedFN).unwrap());
-		let _ = table.set("keyModPressed", script.create_function(Window::keyModPressedFN).unwrap());
-		let _ = table.set("close", script.create_function(Window::closeFN).unwrap());
-		let _ = table.set("keyPressed", script.create_function(Window::keyPressedFN).unwrap());
-		let _ = table.set("keyJustPressed", script.create_function(Window::keyJustPressedFN).unwrap());
-		let _ = table.set("execute", script.create_function(Window::executeFN).unwrap());
-
-		let _ = table.set("loadUI",
-		script.create_function(|_, path: String|
-		{
-			Window::getUI().requestLoad(path);
-			Ok(())
-		}).unwrap());
-
-		let _ = table.set("uiSize",
-		script.create_function(|_, _: ()|
-		{
-			let s = Window::getUI().getSize();
-			Ok((s.x, s.y))
-		}).unwrap());
-
-		let _ = table.raw_set("input",
-		script.create_function(|_, _: ()|
-		{
-			let x = Window::getInstance().inputEvent;
-			if let Some(c) = x { Ok(c.to_string()) }
-			else { Ok(String::new()) }
-		}).unwrap());
-
-		let _ = script.globals().set("window", table);
-
-		bind::network(script);
-	}
-
-	fn strToMB(name: String) -> glfw::MouseButton
+	pub fn strToMB(name: String) -> glfw::MouseButton
 	{
 		match name.as_str()
 		{
@@ -414,7 +272,7 @@ impl Window
 		}
 	}
 
-	fn strToKey(name: String) -> glfw::Key
+	pub fn strToKey(name: String) -> glfw::Key
 	{
 		match name.as_str()
 		{
@@ -461,7 +319,7 @@ impl Window
 		}
 	}
 
-	fn strToMod(name: String) -> glfw::Modifiers
+	pub fn strToMod(name: String) -> glfw::Modifiers
 	{
 		match name.as_str()
 		{

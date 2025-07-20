@@ -5,9 +5,9 @@ pub struct Variable
 	pub string: String
 }
 
-impl Variable
+impl Default for Variable
 {
-	pub fn new() -> Self
+	fn default() -> Self
 	{
 		Self
 		{

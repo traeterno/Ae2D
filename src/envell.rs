@@ -6,7 +6,7 @@ use server::Server::Server;
 fn main()
 {
 	let server = Server::getInstance();
-	server.setVisible(true);
+	server.setStarted(false);
 
 	println!("Сервер запущен. Ждём игроков...");
 

@@ -191,33 +191,42 @@ impl Network
 	pub fn tcpThread()
 	{
 		let net = Window::getNetwork();
-		let tcp = net.tcp.as_mut().unwrap();
 		let buf = &mut [0u8; 256];
 		'main: loop
 		{
-			match tcp.read(buf)
+			if let Some(tcp) = net.tcp.as_mut()
 			{
-				Ok(size) =>
+				match tcp.read(buf)
 				{
-					if let Some(msg) = Network::parse(&buf[0..size])
+					Ok(size) =>
 					{
-						net.tcpHistory.push(msg);
-					}
-				},
-				Err(x) =>
-				{
-					match x.kind()
-					{
-						ErrorKind::WouldBlock => {},
-						ErrorKind::ConnectionRefused =>
+						if size == 0
 						{
-							Window::getNetwork().tcp = None;
-							break 'main;
-						},
-						_ => {}
+							net.tcpHistory.push(ClientMessage::Disconnected(net.id));
+							continue;
+						}
+						println!("{:?}", &buf[0..size]);
+						if let Some(msg) = Network::parse(&buf[0..size])
+						{
+							net.tcpHistory.push(msg);
+						}
+					},
+					Err(x) =>
+					{
+						match x.kind()
+						{
+							ErrorKind::WouldBlock => {},
+							ErrorKind::ConnectionRefused =>
+							{
+								Window::getNetwork().tcp = None;
+								break 'main;
+							},
+							_ => {}
+						}
 					}
 				}
 			}
+			else { break 'main; }
 		}
 	}
 
@@ -278,21 +287,11 @@ impl Network
 					size
 				};
 
-				let checkpoints =
-				{
-					let mut v = vec![];
-					let raw = String::from_utf8_lossy(
-						&buffer[7 + pl..buffer.len() - 1])
-						.to_string();
-					for c in raw.split("|")
-					{
-						v.push(c.to_string());
-					}
-					v
-				};
+				let checkpoint = String::from_utf8_lossy(
+					&buffer[7 + pl..buffer.len()]).to_string();
 				
 				Some(ClientMessage::GetInfo(
-					udpPort, tickRate, checkpoints, extendPlayers, players
+					udpPort, tickRate, checkpoint, extendPlayers, players
 				))
 			},
 			6 =>
@@ -302,6 +301,7 @@ impl Network
 					String::from_utf8_lossy(&buffer[2..buffer.len()]).to_string()
 				))
 			}
+			7 => Some(ClientMessage::GameReady(buffer[1])),
 			x =>
 			{
 				println!("Unexpected package ID: {x}");
