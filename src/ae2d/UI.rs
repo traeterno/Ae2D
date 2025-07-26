@@ -35,6 +35,8 @@ impl Object
 		bind::sprite(&obj.script);
 		bind::text(&obj.script);
 		bind::window(&obj.script);
+		bind::world(&obj.script);
+		bind::network(&obj.script);
 
 		let mut f = None;
 

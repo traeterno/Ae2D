@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use glfw::Context;
 
-use crate::ae2d::Network::Network;
+use crate::ae2d::{Network::Network, World::World};
 
 use super::{Camera::Camera, Programmable::{Programmable, Variable}, UI::UI};
 
@@ -20,7 +20,8 @@ pub struct Window
 	cam: Camera,
 	textures: HashMap<String, u32>,
 	ui: UI,
-	net: Network
+	net: Network,
+	world: World
 }
 
 impl Window
@@ -43,7 +44,8 @@ impl Window
 			textures: HashMap::new(),
 			ui: UI::new(),
 			net: Network::new(),
-			inputEvent: None
+			inputEvent: None,
+			world: World::new()
 		}
 	}
 
@@ -198,7 +200,7 @@ impl Window
 				}
 				glfw::WindowEvent::Size(w, h) =>
 				{
-					i.cam.setSize((w, h));
+					i.cam.setSize(false, (w, h));
 					i.ui.resize(w, h);
 					unsafe
 					{
@@ -213,12 +215,15 @@ impl Window
 			}
 		}
 
+		i.world.update();
 		i.ui.update();
 
 		i.cam.clear();
+		i.cam.toggleTransform(true);
+		i.cam.draw(&mut i.world);
 		i.cam.toggleTransform(false);
-		i.cam.draw(&mut i.ui);
 		i.cam.display();
+		i.cam.draw(&mut i.ui);
 		window.swap_buffers();
 	}
 
@@ -315,6 +320,19 @@ impl Window
 			"Escape" => glfw::Key::Escape,
 			"Enter" => glfw::Key::Enter,
 			"Backspace" => glfw::Key::Backspace,
+			"Space" => glfw::Key::Space,
+			"F1" => glfw::Key::F1,
+			"F2" => glfw::Key::F2,
+			"F3" => glfw::Key::F3,
+			"F4" => glfw::Key::F4,
+			"F5" => glfw::Key::F5,
+			"F6" => glfw::Key::F6,
+			"F7" => glfw::Key::F7,
+			"F8" => glfw::Key::F8,
+			"F9" => glfw::Key::F9,
+			"F10" => glfw::Key::F10,
+			"F11" => glfw::Key::F11,
+			"F12" => glfw::Key::F12,
 			_ => glfw::Key::Unknown
 		}
 	}
@@ -375,5 +393,10 @@ impl Window
 	pub fn getNetwork() -> &'static mut Network
 	{
 		&mut Window::getInstance().net
+	}
+
+	pub fn getWorld() -> &'static mut World
+	{
+		&mut Window::getInstance().world
 	}
 }

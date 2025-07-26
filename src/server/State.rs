@@ -19,7 +19,7 @@ impl State
 			playersList: HashMap::new(),
 			checkpoint: String::new(),
 			date: String::new(),
-			chatHistory: vec![]
+			chatHistory: vec![],
 		}
 	}
 	fn load(file: String, cfg: &Config) -> Self

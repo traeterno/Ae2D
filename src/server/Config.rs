@@ -170,4 +170,31 @@ impl Config
 	}
 
 	pub fn getPlayersCount(&self) -> u8 { 5 * if self.extendedPlayers { 2 } else { 1 } }
+
+	pub fn split(src: String) -> Vec<String>
+	{
+		let mut v = vec![];
+
+		let mut s = String::new();
+		let mut quoted = false;
+
+		for c in src.chars()
+		{
+			if c == ' '
+			{
+				if quoted { s.push(c); }
+				else if !s.is_empty() { v.push(s); s = String::new(); }
+			}
+			else if c == '"'
+			{
+				quoted = !quoted;
+				if !s.is_empty() { v.push(s); s = String::new(); }
+			}
+			else { s.push(c); }
+		}
+
+		if !s.is_empty() { v.push(s); }
+		
+		v
+	}
 }

@@ -86,7 +86,7 @@ impl ClientMessage
 			Self::SelectChar(id, class) => [&[6u8],
 					&[id], class.as_bytes(), &[0u8]
 				].concat().to_vec(),
-			Self::GameReady(ready) => vec![7u8, ready]
+			Self::GameReady(ready) => vec![7u8, ready],
 		}
 	}
 }

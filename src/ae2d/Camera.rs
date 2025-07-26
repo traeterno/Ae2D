@@ -12,11 +12,12 @@ pub struct Camera
 	shapeShader: Shader,
 	cameraShader: Shader,
 	ts: Transformable2D,
-	size: (i32, i32),
 	fbo: u32,
 	tex: u32,
 	vao: u32,
-	vbo: u32
+	vbo: u32,
+	uiProj: glam::Mat4,
+	worldProj: glam::Mat4
 }
 
 impl Camera
@@ -30,11 +31,12 @@ impl Camera
 			shapeShader: Shader::new(),
 			cameraShader: Shader::new(),
 			ts: Transformable2D::new(),
-			size: (0, 0),
 			fbo: 0,
 			tex: 0,
 			vao: 0,
-			vbo: 0
+			vbo: 0,
+			uiProj: glam::Mat4::IDENTITY,
+			worldProj: glam::Mat4::IDENTITY
 		}
 	}
 
@@ -96,7 +98,7 @@ impl Camera
 			);
 		}
 
-		self.setSize((w, h));
+		self.setSize(false, (w, h));
 		self.toggleTransform(true);
 	}
 
@@ -124,6 +126,13 @@ impl Camera
 
 	pub fn toggleTransform(&mut self, enable: bool)
 	{
+		let m = if enable { self.worldProj } else { self.uiProj };
+		self.imgShader.activate();
+		self.imgShader.setMat4("projection", m);
+		self.txtShader.activate();
+		self.txtShader.setMat4("projection", m);
+		self.shapeShader.activate();
+		self.shapeShader.setMat4("projection", m);
 		let m = if enable {self.ts.getMatrix()} else {glam::Mat4::IDENTITY};
 		self.imgShader.activate();
 		self.imgShader.setMat4("view", m);
@@ -133,36 +142,44 @@ impl Camera
 		self.shapeShader.setMat4("view", m);
 	}
 
-	pub fn setSize(&mut self, s: (i32, i32))
+	pub fn setSize(&mut self, mode: bool, s: (i32, i32))
 	{
-		self.size = s;
 		let m = glam::Mat4::orthographic_rh_gl(
 			0.0, s.0 as f32,
 			s.1 as f32, 0.0,
 			-1.0, 1.0
 		);
-		self.imgShader.activate();
-		self.imgShader.setMat4("projection", m);
-		self.txtShader.activate();
-		self.txtShader.setMat4("projection", m);
-		self.shapeShader.activate();
-		self.shapeShader.setMat4("projection", m);
 
-		unsafe
+		if mode
 		{
-			gl::BindTexture(gl::TEXTURE_2D, self.tex);
-			gl::TexImage2D(
-				gl::TEXTURE_2D, 0, gl::RGB as i32,
-				s.0, s.1, 0, gl::RGB,
-				gl::UNSIGNED_BYTE, 0 as _
-			);
+			self.worldProj = m;
 		}
+		else
+		{
+			self.uiProj = m;
+			unsafe
+			{
+				gl::BindTexture(gl::TEXTURE_2D, self.tex);
+				gl::TexImage2D(
+					gl::TEXTURE_2D, 0, gl::RGB as i32,
+					s.0, s.1, 0, gl::RGB,
+					gl::UNSIGNED_BYTE, 0 as _
+				);
+			}
+		}
+
 	}
 
 	pub fn draw(&mut self, obj: &mut impl Drawable)
 	{
 		obj.draw();
 	}
+
+	pub fn getTransformable(&mut self) -> &mut Transformable2D
+	{
+		&mut self.ts
+	}
+	
 	pub fn getImgShader(&mut self) -> &mut Shader { &mut self.imgShader }
 	pub fn getTxtShader(&mut self) -> &mut Shader { &mut self.txtShader }
 	// pub fn getShapeShader(&mut self) -> &mut Shader { &mut self.shapeShader }

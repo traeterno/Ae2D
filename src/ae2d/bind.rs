@@ -1,8 +1,8 @@
-use std::{io::Write, net::{TcpStream, UdpSocket}};
+use std::{collections::HashMap, io::Write, net::{TcpStream, UdpSocket}};
 
 use mlua::{Lua, Table};
 
-use crate::{ae2d::{Network::Network, Programmable::Variable}, server::Transmission::ClientMessage};
+use crate::{ae2d::{Entity::Entity, Network::Network, Programmable::Variable, World::World}, server::Transmission::ClientMessage};
 
 use super::{Sprite::Sprite, Text::Text, Window::Window};
 
@@ -13,6 +13,7 @@ fn getSprite(id: String) -> &'static mut Sprite
 	match id.nth(0).unwrap()
 	{
 		"ui" => Window::getUI().getObject(id.nth(0).unwrap().to_string()).getSprite(),
+		"ent" => Window::getWorld().getEntity(id.nth(0).unwrap().to_string()).getSprite(),
 		x => panic!("Sprite Lua: {x} not defined")
 	}
 }
@@ -25,6 +26,26 @@ fn getText(id: String) -> &'static mut Text
 	{
 		"ui" => Window::getUI().getObject(id.nth(0).unwrap().to_string()).getText(),
 		x => panic!("Text Lua: {x} not defined")
+	}
+}
+
+fn getEntity(s: &Lua) -> &'static mut Entity
+{
+	let id: String = s.globals().get("ScriptID").unwrap();
+	Window::getWorld().getEntity(
+		id.split("_").nth(1).unwrap().to_string()
+	)
+}
+
+pub fn execFunc(script: &Lua, func: &str)
+{
+	if let Ok(f) = script.globals().get::<mlua::Function>(func)
+	{
+		match f.call::<mlua::Value>(())
+		{
+			Ok(_) => {}
+			Err(x) => { println!("{x}"); }
+		}
 	}
 }
 
@@ -69,6 +90,20 @@ pub fn sprite(s: &Lua)
 	{
 		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
 		spr.setAnimation(x);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.set("loadAnimation",
+	s.create_function(|s, x: String|
+	{
+		*getSprite(s.globals().raw_get("ScriptID").unwrap()) = Sprite::animated(x);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.set("loadImage",
+	s.create_function(|s, x: String|
+	{
+		*getSprite(s.globals().raw_get("ScriptID").unwrap()) = Sprite::image(x);
 		Ok(())
 	}).unwrap());
 
@@ -311,7 +346,7 @@ pub fn network(s: &Lua)
 	let _ = t.raw_set("id",
 	s.create_function(|_, _: ()|
 	{
-		Ok(Window::getNetwork().id.clone())
+		Ok(Window::getNetwork().id)
 	}).unwrap());
 
 	let _ = t.raw_set("class",
@@ -371,6 +406,21 @@ pub fn network(s: &Lua)
 		net.id = data.0;
 		net.name = data.1;
 		net.class = data.2;
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("setState",
+	s.create_function(|_, x: (f32, f32, f32, f32, Table)|
+	{
+		Window::getNetwork().setState(
+			x.0, x.1, x.2, x.3,
+			(
+				x.4.raw_get("MoveX").unwrap(),
+				x.4.raw_get("Jump").unwrap(),
+				x.4.raw_get("Attack").unwrap(),
+				x.4.raw_get("Protect").unwrap()
+			)
+		);
 		Ok(())
 	}).unwrap());
 
@@ -526,9 +576,21 @@ pub fn network(s: &Lua)
 	}).unwrap());
 
 	let _ = t.raw_set("setup", 
-	s.create_function(|_, x: (u16, u8)|
+	s.create_function(|_, x: (u16, u8, Table)|
 	{
-		Window::getNetwork().setup(x.0, x.1);
+		let mut a = HashMap::new();
+		for i in 1..=x.2.raw_len()
+		{
+			let p = x.2.get::<Table>(i).unwrap();
+			a.insert(
+				p.get("id").unwrap(),
+				(
+					p.get("name").unwrap(),
+					p.get("class").unwrap()
+				)
+			);
+		}
+		Window::getNetwork().setup(x.0, x.1, a);
 		Ok(())
 	}).unwrap());
 
@@ -555,26 +617,44 @@ pub fn network(s: &Lua)
 	s.create_function(|_, _: ()|
 	{
 		let s = UdpSocket::bind("0.0.0.0:0").unwrap();
-		let _ = s.set_broadcast(true);
-		let _ = s.send_to(&[], "255.255.255.255:26225");
 		let mut buffer = [0u8; 256];
-		let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(10)));
-		match s.recv_from(&mut buffer)
+		let _ = s.set_broadcast(true);
+		let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(1)));
+		for _ in 0..10
 		{
-			Ok((_, addr)) =>
+			let _ = s.send_to(&[], "255.255.255.255:26225");
+			match s.recv_from(&mut buffer)
 			{
-				let ip = addr.ip().to_string() + ":" +
-					&u16::from_le_bytes([buffer[0], buffer[1]]).to_string();
-				return Ok(ip);
-			}
-			Err(x) => match x.kind()
-			{
-				std::io::ErrorKind::WouldBlock => {}
-				std::io::ErrorKind::TimedOut => {}
-				_ => println!("Список серверов не был получен: {x:?}")
+				Ok((_, addr)) =>
+				{
+					let ip = addr.ip().to_string() + ":" +
+						&u16::from_le_bytes([buffer[0], buffer[1]]).to_string();
+					return Ok(ip);
+				}
+				Err(x) => match x.kind()
+				{
+					std::io::ErrorKind::WouldBlock => {}
+					std::io::ErrorKind::TimedOut => {}
+					_ => println!("Список серверов не был получен: {x:?}")
+				}
 			}
 		}
 		Ok(String::new())
+	}).unwrap());
+	
+	let _ = t.raw_set("getPlayer",
+	s.create_function(|_, id: u8|
+	{
+		let def = (String::new(), String::new());
+		let data = Window::getNetwork().avatars
+			.get(&id).unwrap_or(&def);
+		Ok(data.clone())
+	}).unwrap());
+
+	let _ = t.raw_set("playersCount",
+	s.create_function(|_, _: ()|
+	{
+		Ok(Window::getNetwork().avatars.len())
 	}).unwrap());
 
 	let _ = s.globals().set("network", t);
@@ -665,7 +745,10 @@ pub fn window(script: &Lua)
 		let e = Window::getInstance().keyEvent;
 		if e.is_none() { return Ok(false); }
 		let e = e.unwrap();
-		Ok(e.0 == Window::strToKey(name) && e.1 == glfw::Action::Press)
+		Ok(
+			e.0 == Window::strToKey(name) &&
+			(e.1 == glfw::Action::Press || e.1 == glfw::Action::Repeat)
+		)
 	}).unwrap());
 	
 	let _ = table.raw_set("keyModPressed",
@@ -718,7 +801,162 @@ pub fn window(script: &Lua)
 			.get_clipboard_string().unwrap_or_default())
 	}).unwrap());
 
-	let _ = script.globals().set("window", table);
+	let _ = table.raw_set("setClipboard",
+	script.create_function(|_, x: String|
+	{
+		Window::getInstance().window.as_mut().unwrap().set_clipboard_string(&x);
+		Ok(())
+	}).unwrap());
 
-	network(script);
+	let _ = script.globals().raw_set("window", table);
+}
+
+pub fn world(script: &Lua)
+{
+	let t = script.create_table().unwrap();
+
+	let _ = t.raw_set("load",
+	script.create_function(|_, path: String|
+	{
+		Window::getWorld().load(path);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("spawn",
+	script.create_function(|_, data: (String, String, Table)|
+	{
+		let mut obj = json::object! {};
+		for v in data.2.pairs::<String, mlua::Value>()
+		{
+			if let Err(_) = v { continue; }
+			let (var, value) = v.unwrap();
+			let _ = if value.is_integer() { obj.insert(&var, value.as_i32().unwrap()) }
+			else if value.is_number() { obj.insert(&var, value.as_f32().unwrap()) }
+			else if value.is_boolean() { obj.insert(&var, value.as_boolean().unwrap()) }
+			else { obj.insert(&var, value.as_string_lossy().unwrap()) };
+		}
+		Window::getWorld().spawn(data.0, data.1, obj);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("createTrigger",
+	script.create_function(|_, x: (String, String, f32, f32, f32, f32)|
+	{
+		Window::getWorld().createTrigger(
+			x.0, x.1,
+			glam::vec4(x.2, x.3, x.4, x.5
+		));
+		Ok(())
+	}).unwrap());
+	
+	let _ = t.raw_set("modifyTrigger",
+	script.create_function(|_, x: (String, f32, f32, f32, f32)|
+	{
+		Window::getWorld().modifyTrigger(
+			x.0, glam::vec4(x.1, x.2, x.3, x.4)
+		);
+		Ok(())
+	}).unwrap());
+	
+	let _ = t.raw_set("getTriggers",
+	script.create_function(|s, _: ()|
+	{
+		let t = s.create_table().unwrap();
+		for (id, hb) in Window::getWorld().getTriggers()
+		{
+			let h = s.create_table().unwrap();
+			let _ = h.raw_set("name", hb.0.as_str());
+			let _ = h.raw_set("x", hb.1.x);
+			let _ = h.raw_set("y", hb.1.y);
+			let _ = h.raw_set("w", hb.1.z);
+			let _ = h.raw_set("h", hb.1.w);
+			let _ = t.raw_set(id.clone(), h);
+		}
+		Ok(t)
+	}).unwrap());
+
+	let _ = t.raw_set("setNum",
+	script.create_function(|_, data: (String, f32)|
+	{
+		Window::getWorld().getProgrammable().insert(
+			data.0,
+			Variable { num: data.1, string: String::new() }
+		);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("setStr",
+	script.create_function(|_, data: (String, String)|
+	{
+		Window::getWorld().getProgrammable().insert(
+			data.0,
+			Variable { num: 0.0, string: data.1 }
+		);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("getNum",
+	script.create_function(|_, data: String|
+	{
+		let v = Variable::default();
+		Ok(Window::getWorld().getProgrammable().get(&data).unwrap_or(&v).num)
+	}).unwrap());
+	
+	let _ = t.raw_set("getStr",
+	script.create_function(|_, data: String|
+	{
+		let v = Variable::default();
+		Ok(Window::getWorld().getProgrammable().get(&data).unwrap_or(&v).string.clone())
+	}).unwrap());
+	
+	let _ = t.raw_set("setCamSize",
+	script.create_function(|_, x: (i32, i32)|
+	{
+		Window::getCamera().setSize(true, x);
+		Ok(())
+	}).unwrap());
+	
+	let _ = t.raw_set("setCamPos",
+	script.create_function(|_, x: (f32, f32)|
+	{
+		Window::getCamera().getTransformable().setPosition(glam::vec2(-x.0, -x.1));
+		Ok(())
+	}).unwrap());
+	
+	let _ = t.raw_set("getCamPos",
+	script.create_function(|_, _: ()|
+	{
+		let p = Window::getCamera().getTransformable().getPosition();
+		Ok((-p.x, -p.y))
+	}).unwrap());
+	
+	let _ = t.raw_set("setCamOrigin",
+	script.create_function(|_, x: (f32, f32)|
+	{
+		Window::getCamera().getTransformable().setOrigin(glam::vec2(-x.0, -x.1));
+		Ok(())
+	}).unwrap());
+	
+	let _ = t.raw_set("getCamOrigin",
+	script.create_function(|_, _: ()|
+	{
+		let p = Window::getCamera().getTransformable().getOrigin();
+		Ok((-p.x, -p.y))
+	}).unwrap());
+	
+	let _ = t.raw_set("kill",
+	script.create_function(|_, x: String|
+	{
+		Window::getWorld().kill(x);
+		Ok(())
+	}).unwrap());
+	
+	let _ = t.raw_set("reset",
+	script.create_function(|_, _: ()|
+	{
+		*Window::getWorld() = World::new();
+		Ok(())
+	}).unwrap());
+	
+	let _ = script.globals().raw_set("world", t);
 }

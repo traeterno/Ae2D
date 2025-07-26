@@ -1,4 +1,4 @@
-use std::{io::{ErrorKind, Read}, net::{TcpStream, UdpSocket}, time::{Duration, Instant}};
+use std::{collections::HashMap, io::{ErrorKind, Read}, net::{TcpStream, UdpSocket}, time::{Duration, Instant}};
 
 use crate::server::Transmission::ClientMessage;
 
@@ -78,7 +78,8 @@ pub struct Network
 	tickTime: Duration,
 	mainState: PlayerState,
 	pub state: Vec<PlayerState>,
-	pub tcpHistory: Vec<ClientMessage>
+	pub tcpHistory: Vec<ClientMessage>,
+	pub avatars: HashMap<u8, (String, String)>
 }
 
 impl Network
@@ -97,14 +98,14 @@ impl Network
 			mainState: PlayerState::default(),
 			state: vec![],
 			tcpHistory: vec![],
+			avatars: HashMap::new()
 		}
 	}
 
-	pub fn setup(&mut self, udp: u16, tickRate: u8)
+	pub fn setup(&mut self, udp: u16, tickRate: u8, avatars: HashMap<u8, (String, String)>)
 	{
 		let addr = self.tcp.as_mut().unwrap().peer_addr().unwrap().ip()
 			.to_string() + ":" + &udp.to_string();
-		println!("Connecting UDP to {addr}");
 		
 		match self.udp.as_mut().unwrap().connect(addr)
 		{
@@ -114,6 +115,8 @@ impl Network
 
 		self.tickRate = tickRate;
 		self.tickTime = Duration::from_secs_f32(1.0 / self.tickRate as f32);
+
+		self.avatars = avatars;
 
 		std::thread::spawn(Network::updateThread);
 	}
@@ -356,5 +359,18 @@ impl Network
 			}
 		}
 		out
+	}
+
+	pub fn setState(&mut self, px: f32, py: f32, vx: f32, vy: f32, state: (i8, bool, bool, bool))
+	{
+		self.mainState = PlayerState
+		{
+			pos: (px, py),
+			vel: (vx, vy),
+			moveX: state.0,
+			jump: state.1,
+			attack: state.2,
+			protect: state.3
+		}
 	}
 }

@@ -1,6 +1,10 @@
 use std::time::Instant;
 use std::net::{SocketAddr, TcpListener, UdpSocket};
 
+use rand::Rng;
+
+use crate::server::Voting::Voting;
+
 use super::WebClient::WebClient;
 use super::Transmission::{ClientMessage, ServerMessage, WebResponse};
 use super::State::State;
@@ -22,7 +26,8 @@ pub struct Server
 	sendTimer: Instant,
 	recvTimer: Instant,
 	udpBC: UdpSocket,
-	started: bool
+	started: bool,
+	voting: Voting
 }
 
 impl Server
@@ -91,7 +96,8 @@ impl Server
 			sendTimer: Instant::now(),
 			recvTimer: Instant::now(),
 			udpBC: bc,
-			started: false
+			started: false,
+			voting: Voting::new()
 		}
 	}
 
@@ -200,6 +206,23 @@ impl Server
 			}
 			self.recvTimer = Instant::now();
 		}
+
+		if self.voting.active() && self.voting.finished()
+		{
+			let (opt, count) = self.voting.getResult();
+			let msg = format!(
+				"Результат голосования: {opt} ({count} голосов)",
+			);
+			println!("{msg}");
+			self.broadcast.push(ClientMessage::Chat(msg));
+
+			let msg = format!(
+				"/votingResult \"{}\" \"{opt}\"",
+				self.voting.getTopic()
+			);
+			self.broadcast.push(ClientMessage::Chat(msg));
+			self.voting = Voting::new();
+		}
 		
 		self.handleRequests();
 		self.broadcastTCP();
@@ -254,25 +277,7 @@ impl Server
 					if id != 0
 					{
 						println!("P{} вышел из игры.", id);
-						self.clients[(id - 1) as usize] = Client::default();
-						self.playersState[(id - 1) as usize][0] = id;
 						self.broadcast.push(ClientMessage::Disconnected(id));
-
-						let mut check = true;
-						for c in &self.clients
-						{
-							if c.id != 0 { check = false; }
-						}
-						if check
-						{
-							println!("Все вышли из игры.");
-							if self.started
-							{
-								println!("Возвращаемся в меню выбора персонажей...");
-								self.started = false;
-							}
-						}
-						self.updateReady();
 					}
 				},
 				ServerMessage::Chat(msg, web) =>
@@ -489,14 +494,40 @@ impl Server
 
 	fn broadcastTCP(&mut self)
 	{
+		let mut updateReady = false;
 		for msg in &self.broadcast
 		{
 			for c in &mut self.clients
 			{
 				c.sendTCP(msg.clone());
 			}
+			match *msg
+			{
+				ClientMessage::Disconnected(id) =>
+				{
+					self.clients[(id - 1) as usize] = Client::default();
+					self.playersState[(id - 1) as usize][0] = id;
+					updateReady = true;
+					let mut check = true;
+					for c in &self.clients
+					{
+						if c.id != 0 && c.id != id { check = false; }
+					}
+					if check
+					{
+						println!("Все вышли из игры.");
+						if self.started
+						{
+							println!("Возвращаемся в меню выбора персонажей...");
+							self.started = false;
+						}
+					}
+				}
+				_ => {}
+			}
 		}
 		self.broadcast.clear();
+		if updateReady { self.updateReady(); }
 	}
 
 	fn broadcastState(&mut self)
@@ -549,8 +580,8 @@ impl Server
 
 	pub fn cmd(&mut self, executor: u8, webID: SocketAddr, txt: String)
 	{
-		let txt = txt.to_lowercase();
-		let mut args = txt.split(" ");
+		let args = Config::split(txt.clone());
+		if args.len() == 0 { return; }
 		if executor == 0
 		{
 			println!("Центр мира вызвал команду: {txt}");
@@ -559,83 +590,118 @@ impl Server
 				"text/json".to_string()
 			));
 		}
+		
 		let name =
 			if executor == 0 { String::from("Центр мира") }
 			else { self.clients[(executor - 1) as usize].name.clone() };
 		let p = self.config.getPermission(&name);
-		println!("P{executor} ({name}, {}) вызвал '{txt}'", p.toString());
 		
-		let c = args.nth(0).unwrap_or(" ");
+		let command = args[0].clone();
 
-		if c == "getposition" && p.check(Permission::Developer)
+		if command == "getPosition" && p.check(Permission::Developer)
 		{
-			let n = args.nth(0).unwrap_or(&name);
+			let n = args.get(1).unwrap_or(&name);
 			let id = self.getPlayerID(n);
 
-			let pos = if id == 0 { "Не найден" } else
+			let pos = if id == 0 { String::from("Не найден") } else
 			{
 				let s = &self.playersState[(id - 1) as usize];
 				let x = u16::from_le_bytes([s[1], s[2]]);
 				let y = u16::from_le_bytes([s[3], s[4]]);
-				&(x.to_string() + " " + &y.to_string())
+				format!("{x} {y}")
 			};
 			
 			let msg = format!("[Игрок {name} запросил координаты {n}] {pos}");
 
+			println!("{msg}");
+
 			self.broadcast.push(ClientMessage::Chat(msg.clone()));
 			self.state.chatHistory.push((name.to_string(), msg));
 		}
-		else if c == "setposition" && p.check(Permission::Developer)
+		else if command == "setPosition" && p.check(Permission::Developer)
 		{
-			let n = args.nth(0).unwrap_or(&name);
+			let n = args.get(1).unwrap_or(&name);
 			let id = self.getPlayerID(n);
 			if id == 0
 			{
-				self.state.chatHistory.push((name.clone(),
-					format!("[Игрок {n} не был перемещён: НЕ НАЙДЕН]")
-				));
+				let msg = format!("[Игрок {n} не был перемещён: НЕ НАЙДЕН]");
+				println!("{msg}");
+				self.state.chatHistory.push((name.clone(), msg));
 				return;
 			}
-			let x = args.nth(0).unwrap_or("0").parse::<u16>().unwrap();
-			let y = args.nth(0).unwrap_or("0").parse::<u16>().unwrap();
-			println!("P{id}({n}) перемещён в ({x};{y})");
+			let x = args.get(2).unwrap_or(&String::from("0")).parse().unwrap();
+			let y = args.get(3).unwrap_or(&String::from("0")).parse().unwrap();
 			
-			self.state.chatHistory.push((name.clone(),
-				format!("[Игрок {n} перемещён в ({x};{y})]")
-			));
+			let msg = format!("[Игрок {n} перемещён в ({x};{y})]");
+			println!("{msg}");
+			self.state.chatHistory.push((name.clone(), msg.clone()));
+			self.broadcast.push(ClientMessage::Chat(msg));
 			self.clients[(id - 1) as usize].sendTCP(ClientMessage::SetPosition(x, y));
 		}
-		else if c == "gettime"
+		else if command == "getTime"
 		{
-			self.state.chatHistory.push((name,
-				format!("Текущее время сервера: {}", State::getDateTime())
-			));
+			let msg = format!("Текущее время сервера: {}", State::getDateTime());
+			println!("{msg}");
+			self.broadcast.push(ClientMessage::Chat(msg.clone()));
+			self.state.chatHistory.push((name, msg));
 		}
-		else if c == "save"
+		else if command == "save"
 		{
 			self.save(
-				args.nth(0).unwrap_or(&self.config.firstCheckpoint)
-				.to_string()
+				args.get(1)
+				.unwrap_or(&self.config.firstCheckpoint).to_string()
 			);
 		}
-		else if c == "kick"
+		else if command == "kick"
 		{
-			let target = args.nth(0).unwrap_or(&name);
-			println!("{target}");
+			let target = args.get(1).unwrap_or(&name);
+			let suicide = [
+				format!("Игрок {target} прострелил себе колено."),
+				format!("Игрок {target} сошёл с корабля."),
+				format!("Игрок {target} поставил себя в угол."),
+				format!("Игрок {target} был наказан дефолтом.")
+			];
 			for i in 0..self.clients.len()
 			{
-				if self.clients[i].name.to_lowercase() == target.to_lowercase()
+				if self.clients[i].name == *target
 				{
 					self.broadcast.push(ClientMessage::Disconnected((i + 1) as u8));
-					let msg = if target == name
+					let msg = if *target == name
 						{
-							format!("Игрок {target} прострелил себе колено.")
+							suicide[rand::rng().random_range(0..suicide.len())].clone()
 						}
 						else { format!("Игрок {name} выгнал из игры {target}.") };
+					println!("{msg}");
 					self.broadcast.push(ClientMessage::Chat(msg.clone()));
 					self.state.chatHistory.push((String::new(), msg));
-					self.updateReady();
 				}
+			}
+		}
+		else if command == "voting"
+		{
+			if args.len() < 4 { return; }
+			let topic = args[1].clone();
+			let timeout = args[2].parse().unwrap();
+			let mut opt = vec![];
+			for i in 3..args.len() { opt.push(args[i].clone()); }
+			let msg = format!("Игрок {name} начал голосование.");
+			self.broadcast.push(ClientMessage::Chat(msg));
+
+			let mut cmd = format!("/voting \"{topic}\" ");
+			for o in &opt { cmd = cmd + "\"" + o.as_str() + "\" "; }
+			self.broadcast.push(ClientMessage::Chat(cmd));
+
+			self.voting.start(topic, opt, timeout);
+		}
+		else if command == "vote"
+		{
+			if args.len() == 1 { return; }
+			if let Ok(x) = args[1].parse()
+			{
+				self.voting.vote(x);
+				let msg = format!("Игрок {name} проголосовал.");
+				println!("{msg}");
+				self.broadcast.push(ClientMessage::Chat(msg));
 			}
 		}
 	}

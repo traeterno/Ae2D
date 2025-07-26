@@ -98,7 +98,12 @@ impl Font
 
 	pub fn getGlyph(&self, c: char) -> Option<&Glyph>
 	{
-		self.glyphs.get(&(c as u16))
+		let g = self.glyphs.get(&(c as u16));
+		match g
+		{
+			None => { println!("Символ не найден: {c}"); g },
+			Some(_) => g
+		}
 	}
 }
 
