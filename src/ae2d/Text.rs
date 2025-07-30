@@ -101,7 +101,7 @@ impl Font
 		let g = self.glyphs.get(&(c as u16));
 		match g
 		{
-			None => { println!("Символ не найден: {c}"); g },
+			None => { println!("Символ не найден: {c}({})", c as u16); g },
 			Some(_) => g
 		}
 	}

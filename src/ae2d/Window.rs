@@ -333,6 +333,12 @@ impl Window
 			"F10" => glfw::Key::F10,
 			"F11" => glfw::Key::F11,
 			"F12" => glfw::Key::F12,
+			"Left" => glfw::Key::Left,
+			"Right" => glfw::Key::Right,
+			"Up" => glfw::Key::Up,
+			"Down" => glfw::Key::Down,
+			"Home" => glfw::Key::Home,
+			"End" => glfw::Key::End,
 			_ => glfw::Key::Unknown
 		}
 	}

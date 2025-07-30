@@ -6,6 +6,7 @@ use crate::ae2d::{bind, Camera::Drawable, Entity::Entity, Programmable::Programm
 
 pub struct World
 {
+	name: String,
 	script: Lua,
 	ents: Vec<Entity>,
 	prog: Programmable,
@@ -18,6 +19,7 @@ impl World
 	{
 		Self
 		{
+			name: String::new(),
 			script: Lua::new(),
 			ents: vec![],
 			prog: Programmable::new(),
@@ -25,13 +27,22 @@ impl World
 		}
 	}
 
-	pub fn load(&mut self, path: String)
+	pub fn load(&mut self, id: String)
 	{
+		let path = String::from("res/scripts/worlds/") + &id + ".lua";
+		self.parse(
+			id,
+			std::fs::read_to_string(path).unwrap_or_default()
+		);
+	}
+
+	pub fn parse(&mut self, id: String, src: String)
+	{
+		self.name = id;
 		self.script = Lua::new();
 		self.ents.clear();
-		
-		let path = String::from("res/scripts/worlds/") + &path + ".lua";
-		match self.script.load(std::fs::read_to_string(path).unwrap_or_default()).exec()
+
+		match self.script.load(src).exec()
 		{
 			Ok(_) => {}
 			Err(x) => { println!("Не удалось загрузить мир: {x}"); return; }
@@ -40,7 +51,7 @@ impl World
 		bind::window(&self.script);
 		bind::network(&self.script);
 		bind::world(&self.script);
-		bind::execFunc(&self.script, "Init");
+		bind::execFunc(&self.script, "Init"); 
 	}
 
 	pub fn update(&mut self)
@@ -48,38 +59,7 @@ impl World
 		bind::execFunc(&self.script, "Update");
 		for i in 0..self.ents.len()
 		{
-			// let n1 = self.ents[i].getName();
-			// let id1 = self.ents[i].getID();
-			// let h1 = self.ents[i].getHitbox();
 			self.ents[i].update();
-			// self.ents[i].applyVelocity(0);
-			// do smth with this ^
-			// for j in 0..self.ents.len()
-			// {
-			// 	if i >= j { continue; }
-			// 	let h2 = self.ents[j].getHitbox();
-			// 	if self.ents[i].checkCollision(h2)
-			// 	{
-			// 		let n2 = self.ents[j].getName();
-			// 		let id2 = self.ents[j].getID();
-			// 		self.ents[i].onCollided(
-			// 			0, n2.clone(), id2.clone(),
-			// 			h2.x, h2.y, h2.z, h2.w
-			// 		);
-			// 		self.ents[i].onCollided(
-			// 			1, n2.clone(), id2.clone(),
-			// 			h2.x, h2.y, h2.z, h2.w
-			// 		);
-			// 		self.ents[j].onCollided(
-			// 			0, n1.clone(), id1.clone(),
-			// 			h1.x, h1.y, h1.z, h1.w
-			// 		);
-			// 		self.ents[j].onCollided(
-			// 			1, n1.clone(), id1.clone(),
-			// 			h1.x, h1.y, h1.z, h1.w
-			// 		);
-			// 	}
-			// }
 		}
 	}
 
@@ -132,6 +112,8 @@ impl World
 	{
 		&mut self.prog
 	}
+
+	pub fn getName(&self) -> String { self.name.clone() }
 }
 
 impl Drawable for World

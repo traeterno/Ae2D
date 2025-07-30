@@ -808,6 +808,12 @@ pub fn window(script: &Lua)
 		Ok(())
 	}).unwrap());
 
+	let _ = table.raw_set("readFile",
+	script.create_function(|_, x: String|
+	{
+		Ok(std::fs::read_to_string(x).unwrap_or_default())
+	}).unwrap());
+
 	let _ = script.globals().raw_set("window", table);
 }
 
@@ -815,10 +821,23 @@ pub fn world(script: &Lua)
 {
 	let t = script.create_table().unwrap();
 
+	let _ = t.raw_set("name",
+	script.create_function(|_, _: ()|
+	{
+		Ok(Window::getWorld().getName())
+	}).unwrap());
+
 	let _ = t.raw_set("load",
 	script.create_function(|_, path: String|
 	{
 		Window::getWorld().load(path);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("parse",
+	script.create_function(|_, x: (String, String)|
+	{
+		Window::getWorld().parse(x.0, x.1);
 		Ok(())
 	}).unwrap());
 

@@ -98,7 +98,7 @@ pub struct Sprite
 	texture: u32,
 	vbo: u32,
 	vao: u32,
-	rectXY: glam::Vec2,
+	rect: glam::Vec4,
 	texSize: glam::Vec2,
 	ts: Transformable2D,
 	color: glam::Vec4,
@@ -134,7 +134,7 @@ impl Sprite
 			frames: vec![],
 			texture: 0,
 			vbo, vao,
-			rectXY: glam::Vec2::ZERO,
+			rect: glam::Vec4::ZERO,
 			texSize: glam::Vec2::ZERO,
 			ts: Transformable2D::new(),
 			color: glam::Vec4::ONE,
@@ -173,11 +173,11 @@ impl Sprite
 						gl::TEXTURE_HEIGHT, &mut h
 					);
 
-					let vertices = [
+					let vertices: [f32; 8] = [
 						0.0, 0.0,
-						w as f32, 0.0,
-						w as f32, h as f32,
-						0.0, h as f32
+						1.0, 0.0,
+						1.0, 1.0,
+						0.0, 1.0
 					];
 					
 					gl::BindBuffer(gl::ARRAY_BUFFER, spr.vbo);
@@ -233,11 +233,11 @@ impl Sprite
 				gl::TEXTURE_HEIGHT, &mut h
 			);
 
-			let vertices = [
+			let vertices: [f32; 8] = [
 				0.0, 0.0,
-				w as f32, 0.0,
-				w as f32, h as f32,
-				0.0, h as f32
+				1.0, 0.0,
+				1.0, 1.0,
+				0.0, 1.0
 			];
 
 			gl::BindBuffer(gl::ARRAY_BUFFER, spr.vbo);
@@ -249,6 +249,7 @@ impl Sprite
 		}
 		spr.texSize = glam::vec2(w as f32, h as f32);
 		spr.frameSize = spr.texSize;
+		spr.rect = glam::vec4(0.0, 0.0, spr.frameSize.x, spr.frameSize.y);
 		spr
 	}
 
@@ -310,23 +311,8 @@ impl Sprite
 
 	pub fn setTextureRect(&mut self, rect: glam::Vec4)
 	{
-		self.rectXY = rect.xy();
+		self.rect = rect;
 		self.frameSize = rect.zw();
-		unsafe
-		{
-			gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
-			gl::BufferData(
-				gl::ARRAY_BUFFER,
-				(8 * size_of::<f32>()) as _,
-				([
-					0.0, 0.0,
-					rect.z, 0.0,
-					rect.z, rect.w,
-					0.0, rect.w
-				] as [f32; 8]).as_ptr() as *const _,
-				gl::STATIC_DRAW
-			);
-		}
 	}
 
 	pub fn getTransformable(&mut self) -> &mut Transformable2D
@@ -372,12 +358,12 @@ impl Drawable for Sprite
 		let s = Window::getCamera().getImgShader();
 		s.activate();
 		s.setInt("tex", 0);
-		s.setVec2("frameXY",
+		s.setVec4("frame",
 			if self.animations.len() == 0
 			{
-				self.rectXY
+				self.rect
 			}
-			else { self.getCurrentFrame().xy() }
+			else { self.getCurrentFrame() }
 		);
 		s.setVec2("texSize", self.texSize);
 		s.setMat4("model", self.ts.getMatrix());
