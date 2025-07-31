@@ -73,6 +73,7 @@ impl Window
 		let mut title = "Ae2D";
 		let mut size = glam::vec2(1280.0, 720.0);
 		let mut vsync = true;
+		let mut fullscreen = false;
 		let mut colors = HashMap::new();
 
 		for (name, section) in cfg.entries()
@@ -83,6 +84,7 @@ impl Window
 				{
 					if x == "title" { title = y.as_str().unwrap(); }
 					if x == "vsync" { vsync = y.as_bool().unwrap(); }
+					if x == "fullscreen" { fullscreen = y.as_bool().unwrap(); }
 					if x == "size"
 					{
 						let mut s = y.members();
@@ -119,7 +121,7 @@ impl Window
 				for (name, value) in section.entries()
 				{
 					let num = value.as_f32().unwrap_or(0.0);
-					let s = value.as_str().unwrap().to_string();
+					let s = value.as_str().unwrap_or_default().to_string();
 					i.prog.insert(
 						name.to_string(),
 						Variable
@@ -132,12 +134,31 @@ impl Window
 			}
 		}
 
-		let (mut window, events) = i.context.create_window(
-			size.x as u32,
-			size.y as u32,
-			title,
-			glfw::WindowMode::Windowed
-		).unwrap();
+		let (mut window, events) = if fullscreen
+		{
+			vsync = true;
+			i.context.with_primary_monitor(|g, m|
+			{
+				let s = m.as_ref().unwrap().get_video_mode().unwrap();
+				size = glam::vec2(s.width as f32, s.height as f32);
+				g.create_window(
+					size.x as u32,
+					size.y as u32,
+					title,
+					glfw::WindowMode::FullScreen(m.unwrap())
+				).unwrap()
+			})
+		}
+		else
+		{
+			i.context.create_window(
+				size.x as u32,
+				size.y as u32,
+				title,
+				glfw::WindowMode::Windowed
+			).unwrap()
+		};
+
 
 		window.set_mouse_button_polling(true);
 		window.set_key_polling(true);
@@ -159,7 +180,9 @@ impl Window
 		
 		unsafe
 		{
-			gl::Enable(gl::BLEND);
+			gl::StencilMask(0xFF);
+			gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
+			gl::StencilOp(gl::KEEP, gl::REPLACE, gl::REPLACE);
 			gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
 			gl::Viewport(0, 0, size.x as i32, size.y as i32);
 		}

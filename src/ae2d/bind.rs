@@ -976,6 +976,13 @@ pub fn world(script: &Lua)
 		*Window::getWorld() = World::new();
 		Ok(())
 	}).unwrap());
+
+	let _ = t.raw_set("setLayersCount",
+	script.create_function(|_, x: u8|
+	{
+		Window::getWorld().setLayersCount(x);
+		Ok(())
+	}).unwrap());
 	
 	let _ = script.globals().raw_set("world", t);
 }

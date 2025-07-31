@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 use mlua::Lua;
 
-use crate::ae2d::{bind, Camera::Drawable, Entity::Entity, Programmable::Programmable};
+use crate::ae2d::{bind, Camera::Drawable, Entity::Entity, Programmable::{Programmable, Variable}};
 
 pub struct World
 {
@@ -10,7 +10,8 @@ pub struct World
 	script: Lua,
 	ents: Vec<Entity>,
 	prog: Programmable,
-	triggers: HashMap<String, (String, glam::Vec4)>
+	triggers: HashMap<String, (String, glam::Vec4)>,
+	layers: Vec<(Vec<String>, Vec<String>)>
 }
 
 impl World
@@ -23,7 +24,8 @@ impl World
 			script: Lua::new(),
 			ents: vec![],
 			prog: Programmable::new(),
-			triggers: HashMap::new()
+			triggers: HashMap::new(),
+			layers: vec![]
 		}
 	}
 
@@ -56,11 +58,25 @@ impl World
 
 	pub fn update(&mut self)
 	{
+		let timer = Instant::now();
+		for l in &mut self.layers { *l = (vec![], vec![]); }
 		bind::execFunc(&self.script, "Update");
 		for i in 0..self.ents.len()
 		{
-			self.ents[i].update();
+			let (layer, opaque) = self.ents[i].update();
+			if opaque
+			{
+				self.layers[layer as usize].0.push(self.ents[i].getID());
+			}
+			else
+			{
+				self.layers[layer as usize].1.push(self.ents[i].getID());
+			}
 		}
+		self.prog.insert(
+			"updateTime".to_string(),
+			Variable::num(timer.elapsed().as_micros() as f32 / 1000.0)
+		);
 	}
 
 	pub fn getEntity(&mut self, id: String) -> &mut Entity
@@ -114,15 +130,46 @@ impl World
 	}
 
 	pub fn getName(&self) -> String { self.name.clone() }
+
+	pub fn setLayersCount(&mut self, layers: u8)
+	{
+		self.layers.resize(layers as usize, (vec![], vec![]));
+	}
 }
 
 impl Drawable for World
 {
 	fn draw(&mut self)
 	{
-		for ent in &mut self.ents
+		let timer = Instant::now();
+		for layer in 0..self.layers.len()
 		{
-			ent.draw();
+			unsafe
+			{
+				gl::Enable(gl::STENCIL_TEST);
+				gl::Clear(gl::STENCIL_BUFFER_BIT);
+				gl::Disable(gl::BLEND);
+			}
+			let opaque = self.layers[layer].0.len();
+			for i in 0..opaque
+			{
+				self.getEntity(self.layers[layer].0[opaque - 1 - i].clone()).draw();
+			}
+			unsafe
+			{
+				gl::Enable(gl::BLEND);
+				gl::Disable(gl::STENCIL_TEST);
+			}
+			let transparent = self.layers[layer].1.len();
+			for i in 0..transparent
+			{
+				self.getEntity(self.layers[layer].1[i].clone()).draw();
+			}
+			// println!("Opaque: {opaque:?}");
+			// println!("Transparent: {transparent:?}");
 		}
+		unsafe { gl::Finish(); }
+		self.prog.insert("drawTime".to_string(),
+			Variable::num(timer.elapsed().as_micros() as f32));
 	}
 }

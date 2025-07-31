@@ -17,4 +17,25 @@ impl Default for Variable
 	}
 }
 
+impl Variable
+{
+	pub fn num(x: f32) -> Self
+	{
+		Self
+		{
+			num: x,
+			string: String::new()
+		}
+	}
+
+	pub fn str(x: String) -> Self
+	{
+		Self
+		{
+			num: 0.0,
+			string: x
+		}
+	}
+}
+
 pub type Programmable = std::collections::HashMap<String, Variable>;

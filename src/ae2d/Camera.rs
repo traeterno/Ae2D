@@ -13,6 +13,7 @@ pub struct Camera
 	cameraShader: Shader,
 	ts: Transformable2D,
 	fbo: u32,
+	sbuf: u32,
 	tex: u32,
 	vao: u32,
 	vbo: u32,
@@ -32,6 +33,7 @@ impl Camera
 			cameraShader: Shader::new(),
 			ts: Transformable2D::new(),
 			fbo: 0,
+			sbuf: 0,
 			tex: 0,
 			vao: 0,
 			vbo: 0,
@@ -67,6 +69,19 @@ impl Camera
 			gl::FramebufferTexture2D(
 				gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0,
 				gl::TEXTURE_2D, self.tex, 0
+			);
+
+			gl::GenTextures(1, &mut self.sbuf);
+			gl::BindTexture(gl::TEXTURE_2D, self.sbuf);
+			gl::TexImage2D(
+				gl::TEXTURE_2D, 0, gl::DEPTH24_STENCIL8 as i32,
+				w, h, 0,
+				gl::DEPTH_STENCIL, gl::UNSIGNED_INT_24_8, 0 as _
+			);
+
+			gl::FramebufferTexture2D(
+				gl::FRAMEBUFFER, gl::DEPTH_STENCIL_ATTACHMENT,
+				gl::TEXTURE_2D, self.sbuf, 0
 			);
 			
 			gl::GenVertexArrays(1, &mut self.vao);
@@ -164,6 +179,12 @@ impl Camera
 					gl::TEXTURE_2D, 0, gl::RGB as i32,
 					s.0, s.1, 0, gl::RGB,
 					gl::UNSIGNED_BYTE, 0 as _
+				);
+				gl::BindTexture(gl::TEXTURE_2D, self.sbuf);
+				gl::TexImage2D(
+					gl::TEXTURE_2D, 0, gl::DEPTH24_STENCIL8 as i32,
+					s.0, s.1, 0,
+					gl::DEPTH_STENCIL, gl::UNSIGNED_INT_24_8, 0 as _
 				);
 			}
 		}

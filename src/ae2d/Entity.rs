@@ -90,9 +90,16 @@ impl Entity
 		}
 	}
 
-	pub fn update(&mut self)
+	pub fn update(&mut self) -> (u8, bool)
 	{
-		bind::execFunc(&self.script, "Update");
+		if let Ok(f) = self.script.globals().get::<mlua::Function>("Update")
+		{
+			if let Ok(x) = f.call::<(u8, bool)>(())
+			{
+				return x;
+			}
+		}
+		(0, true)
 	}
 
 	pub fn getName(&self) -> String
