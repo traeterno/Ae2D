@@ -57,6 +57,7 @@ impl Entity
 		bind::network(&ent.script);
 		bind::world(&ent.script);
 		bind::window(&ent.script);
+		bind::shapes(&ent.script);
 		
 		let _ = ent.script.globals().set(
 			"ScriptID",

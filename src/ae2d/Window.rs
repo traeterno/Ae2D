@@ -59,10 +59,10 @@ impl Window
 		}
 	}
 	
-	pub fn init()
+	pub fn init(path: &str)
 	{
 		let cfg = json::parse(
-			&std::fs::read_to_string("res/global/config.json")
+			&std::fs::read_to_string(path)
 			.unwrap_or(String::new())
 		);
 		if cfg.is_err() { return; }
@@ -75,6 +75,7 @@ impl Window
 		let mut vsync = true;
 		let mut fullscreen = false;
 		let mut colors = HashMap::new();
+		let mut uiPath = "";
 
 		for (name, section) in cfg.entries()
 		{
@@ -100,6 +101,10 @@ impl Window
 							s.nth(0).unwrap().as_f32().unwrap(),
 							s.nth(0).unwrap().as_f32().unwrap()
 						));
+					}
+					if x == "uiPath"
+					{
+						uiPath = y.as_str().unwrap();
 					}
 				}
 			}
@@ -159,7 +164,6 @@ impl Window
 			).unwrap()
 		};
 
-
 		window.set_mouse_button_polling(true);
 		window.set_key_polling(true);
 		window.set_size_polling(true);
@@ -187,7 +191,7 @@ impl Window
 			gl::Viewport(0, 0, size.x as i32, size.y as i32);
 		}
 
-		i.ui.load(String::from("res/ui/mainMenu.json"));
+		i.ui.load(uiPath);
 	}
 
 	pub fn update()
@@ -240,6 +244,11 @@ impl Window
 
 		i.world.update();
 		i.ui.update();
+	}
+
+	pub fn render()
+	{
+		let i = Window::getInstance();
 
 		i.cam.clear();
 		i.cam.toggleTransform(true);
@@ -247,7 +256,12 @@ impl Window
 		i.cam.toggleTransform(false);
 		i.cam.display();
 		i.cam.draw(&mut i.ui);
-		window.swap_buffers();
+		i.window.as_mut().unwrap().swap_buffers();
+	}
+
+	pub fn display()
+	{
+		Window::getInstance().window.as_mut().unwrap().swap_buffers();
 	}
 
 	pub fn getSize() -> (i32, i32)
@@ -362,6 +376,12 @@ impl Window
 			"Down" => glfw::Key::Down,
 			"Home" => glfw::Key::Home,
 			"End" => glfw::Key::End,
+			"LShift" => glfw::Key::LeftShift,
+			"RShift" => glfw::Key::RightShift,
+			"LCtrl" => glfw::Key::LeftControl,
+			"RCtrl" => glfw::Key::RightControl,
+			"LAlt" => glfw::Key::LeftAlt,
+			"RAlt" => glfw::Key::RightAlt,
 			_ => glfw::Key::Unknown
 		}
 	}

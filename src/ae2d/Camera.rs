@@ -203,5 +203,5 @@ impl Camera
 	
 	pub fn getImgShader(&mut self) -> &mut Shader { &mut self.imgShader }
 	pub fn getTxtShader(&mut self) -> &mut Shader { &mut self.txtShader }
-	// pub fn getShapeShader(&mut self) -> &mut Shader { &mut self.shapeShader }
+	pub fn getShapeShader(&mut self) -> &mut Shader { &mut self.shapeShader }
 }

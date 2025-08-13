@@ -92,3 +92,15 @@ impl Drawable for Rectangle
 		}
 	}
 }
+
+impl Drop for Rectangle
+{
+	fn drop(&mut self)
+	{
+		unsafe
+		{
+			gl::DeleteVertexArrays(1, &mut self.vao);
+			gl::DeleteBuffers(1, &mut self.vbo);
+		}
+	}
+}

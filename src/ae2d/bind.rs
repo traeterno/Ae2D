@@ -2,7 +2,7 @@ use std::{collections::HashMap, io::Write, net::{TcpStream, UdpSocket}};
 
 use mlua::{Lua, Table};
 
-use crate::{ae2d::{Entity::Entity, Network::Network, Programmable::Variable, World::World}, server::Transmission::ClientMessage};
+use crate::{ae2d::{Entity::Entity, Network::Network, Programmable::Variable, Shapes, World::World}, server::Transmission::ClientMessage};
 
 use super::{Sprite::Sprite, Text::Text, Window::Window};
 
@@ -985,4 +985,27 @@ pub fn world(script: &Lua)
 	}).unwrap());
 	
 	let _ = script.globals().raw_set("world", t);
+}
+
+pub fn shapes(script: &Lua)
+{
+	let t = script.create_table().unwrap();
+
+	let _ = t.raw_set("rect",
+	script.create_function(|_, x: (f32, f32, f32, f32, u8, u8, u8, u8)|
+	{
+		let mut s = Shapes::Rectangle::new();
+		s.setColor(glam::vec4(
+			x.4 as f32 / 255.0,
+			x.5 as f32 / 255.0,
+			x.6 as f32 / 255.0,
+			x.7 as f32 / 255.0
+		));
+		s.setSize(glam::vec2(x.2, x.3));
+		s.getTransform().setPosition(glam::vec2(x.0, x.1));
+		Window::getCamera().draw(&mut s);
+		Ok(())
+	}).unwrap());
+
+	let _ = script.globals().raw_set("shapes", t);
 }

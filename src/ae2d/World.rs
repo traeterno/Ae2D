@@ -1,8 +1,8 @@
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
 
 use mlua::Lua;
 
-use crate::ae2d::{bind, Camera::Drawable, Entity::Entity, Programmable::{Programmable, Variable}};
+use crate::ae2d::{bind, Camera::Drawable, Entity::Entity, Programmable::Programmable};
 
 pub struct World
 {
@@ -58,7 +58,6 @@ impl World
 
 	pub fn update(&mut self)
 	{
-		let timer = Instant::now();
 		for l in &mut self.layers { *l = (vec![], vec![]); }
 		bind::execFunc(&self.script, "Update");
 		for i in 0..self.ents.len()
@@ -73,10 +72,6 @@ impl World
 				self.layers[layer as usize].1.push(self.ents[i].getID());
 			}
 		}
-		self.prog.insert(
-			"updateTime".to_string(),
-			Variable::num(timer.elapsed().as_micros() as f32 / 1000.0)
-		);
 	}
 
 	pub fn getEntity(&mut self, id: String) -> &mut Entity
@@ -141,7 +136,6 @@ impl Drawable for World
 {
 	fn draw(&mut self)
 	{
-		let timer = Instant::now();
 		for layer in 0..self.layers.len()
 		{
 			unsafe
@@ -165,11 +159,11 @@ impl Drawable for World
 			{
 				self.getEntity(self.layers[layer].1[i].clone()).draw();
 			}
-			// println!("Opaque: {opaque:?}");
-			// println!("Transparent: {transparent:?}");
 		}
-		unsafe { gl::Finish(); }
-		self.prog.insert("drawTime".to_string(),
-			Variable::num(timer.elapsed().as_micros() as f32));
+		unsafe
+		{
+			gl::Finish();
+			gl::Enable(gl::BLEND);
+		}
 	}
 }

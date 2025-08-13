@@ -282,7 +282,6 @@ impl Server
 				},
 				ServerMessage::Chat(msg, web) =>
 				{
-					println!("P{id}: {msg}");
 					let mut text = msg.clone();
 					let c = text.remove(0);
 					if c == '/' { self.cmd(id, web, text); }
@@ -291,12 +290,12 @@ impl Server
 						let n =
 							if id == 0 { String::from("WebClient") }
 							else { self.clients[(id - 1) as usize].name.clone() };
-						self.broadcast.push(ClientMessage::Chat(n.clone() + ": " + &msg));
+						self.broadcast.push(ClientMessage::Chat(msg.clone()));
 						self.state.chatHistory.push((n.clone(), msg.clone()));
 						if id == 0
 						{
 							WebClient::sendResponse(web, WebResponse::Ok(
-								String::from("{ \"msg\": \"") + &n + ": " + &msg + "\" }",
+								String::from("{ \"msg\": \"") + &msg + "\" }",
 								"text/json".to_string()
 							));
 						}
@@ -645,13 +644,13 @@ impl Server
 			self.broadcast.push(ClientMessage::Chat(msg.clone()));
 			self.state.chatHistory.push((name, msg));
 		}
-		else if command == "save"
-		{
-			self.save(
-				args.get(1)
-				.unwrap_or(&self.config.firstCheckpoint).to_string()
-			);
-		}
+		// else if command == "save"
+		// {
+		// 	self.save(
+		// 		args.get(1)
+		// 		.unwrap_or(&self.config.firstCheckpoint).to_string()
+		// 	);
+		// }
 		else if command == "kick"
 		{
 			let target = args.get(1).unwrap_or(&name);

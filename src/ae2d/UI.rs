@@ -161,7 +161,7 @@ impl UI
 		self.baseSize = size;
 	}
 
-	pub fn load(&mut self, path: String)
+	pub fn load(&mut self, path: &str)
 	{
 		let src = json::parse(
 			&std::fs::read_to_string(path)
@@ -218,7 +218,7 @@ impl UI
 	{
 		if !self.reload.is_empty()
 		{
-			self.load(self.reload.clone());
+			self.load(&self.reload.clone());
 			self.reload.clear();
 		}
 		for obj in &self.objects
