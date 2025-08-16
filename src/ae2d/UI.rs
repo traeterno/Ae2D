@@ -244,13 +244,13 @@ impl UI
 		self.reload = path;
 	}
 
-	pub fn resize(&mut self, w: i32, h: i32)
+	pub fn resize(&mut self)
 	{
 		for obj in &self.objects
 		{
 			if let Ok(f) = obj.script.globals().get::<Function>("OnResized")
 			{
-				let _ = f.call::<Value>((w, h));
+				let _ = f.call::<Value>(());
 			}
 		}
 	}

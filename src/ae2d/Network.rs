@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::{ErrorKind, Read}, net::{TcpStream, UdpSocket}, time::{Duration, Instant}};
 
-use crate::server::Transmission::ClientMessage;
+use crate::server::{State::Account, Transmission::ClientMessage};
 
 use super::Window::Window;
 
@@ -12,14 +12,20 @@ pub struct PlayerState
 	pub moveX: i8,
 	pub jump: bool,
 	pub attack: bool,
-	pub protect: bool
+	pub protect: bool,
+	pub updated: bool
 }
 
 impl PlayerState
 {
 	fn default() -> Self
 	{
-		Self { pos: (0.0, 0.0), vel: (0.0, 0.0), moveX: 0, jump: false, attack: false, protect: false }
+		Self
+		{
+			pos: (0.0, 0.0), vel: (0.0, 0.0),
+			moveX: 0, jump: false, attack: false, protect: false,
+			updated: false
+		}
 	}
 
 	fn parse(data: &[u8]) -> (u8, Self)
@@ -44,7 +50,8 @@ impl PlayerState
 			{
 				pos: (px as f32, py as f32),
 				vel: (vx as f32, vy as f32),
-				moveX, jump, attack, protect
+				moveX, jump, attack, protect,
+				updated: true
 			}
 		);
 	}
@@ -79,7 +86,7 @@ pub struct Network
 	mainState: PlayerState,
 	pub state: Vec<PlayerState>,
 	pub tcpHistory: Vec<ClientMessage>,
-	pub avatars: HashMap<u8, (String, String)>
+	pub avatars: HashMap<u8, Account>
 }
 
 impl Network
@@ -102,7 +109,7 @@ impl Network
 		}
 	}
 
-	pub fn setup(&mut self, udp: u16, tickRate: u8, avatars: HashMap<u8, (String, String)>)
+	pub fn setup(&mut self, udp: u16, tickRate: u8, avatars: HashMap<u8, Account>)
 	{
 		let addr = self.tcp.as_mut().unwrap().peer_addr().unwrap().ip()
 			.to_string() + ":" + &udp.to_string();
@@ -246,67 +253,8 @@ impl Network
 							&buffer[current + 2..current + 2 + len]
 						).to_string()
 					};
-
-					let class =
-					{
-						let mut len = 0;
-						while buffer[current + name.len() + 3 + len] != 0
-						{
-							len += 1;
-						}
-						String::from_utf8_lossy(&buffer[
-							current + name.len() + 3..
-							current + name.len() + 3 + len
-						]).to_string()
-					};
-					current += 1 + 1 + name.len() + 1 + class.len() + 1;
-					out.push(ClientMessage::Login(id, name, class));
-				}
-				5 =>
-				{
-					let port = u16::from_le_bytes([
-						buffer[current + 1],
-						buffer[current + 2]
-					]);
-					let tickRate = buffer[current + 3];
-					let extended = buffer[current + 4] != 0;
-
-					let mut pl = 0;
-					let players =
-					{
-						let mut v = vec![];
-						while buffer[current + 5 + pl] != 0
-						{
-							pl += 1;
-						}
-						let raw = String::from_utf8_lossy(&buffer[
-							current + 5..
-							current + 5 + pl
-						]).to_string();
-						for p in raw.split("|")
-						{
-							if p.is_empty() { continue; }
-							v.push(p.to_string());
-						}
-						v
-					};
-
-					let checkpoint =
-					{
-						let mut len = 0;
-						while buffer[current + 6 + pl + len] != 0
-						{
-							len += 1;
-						}
-
-						String::from_utf8_lossy(&buffer[
-							current + 6 + pl..
-							current + 6 + pl + len
-						]).to_string()
-					};
-
-					current += 1 + 2 + 1 + 1 + pl + 1 + checkpoint.len() + 1;
-					out.push(ClientMessage::GetInfo(port, tickRate, checkpoint, extended, players));
+					current += 1 + 1 + name.len() + 1;
+					out.push(ClientMessage::Login(id, name));
 				}
 				2 =>
 				{
@@ -331,30 +279,6 @@ impl Network
 					current += 1 + msg.len() + 1;
 					out.push(ClientMessage::Chat(msg));
 				}
-				6 =>
-				{
-					let id = buffer[current + 1];
-					let class =
-					{
-						let mut len = 0;
-						while buffer[current + 2 + len] != 0
-						{
-							len += 1;
-						}
-						String::from_utf8_lossy(&buffer[
-							current + 2..
-							current + 2 + len
-						]).to_string()
-					};
-					current += 1 + 1 + class.len() + 1;
-					out.push(ClientMessage::SelectChar(id, class));
-				}
-				7 =>
-				{
-					let state = buffer[current + 1];
-					out.push(ClientMessage::GameReady(state));
-					current += 1 + 1;
-				}
 				_ => { current += 1; }
 			}
 		}
@@ -370,7 +294,8 @@ impl Network
 			moveX: state.0,
 			jump: state.1,
 			attack: state.2,
-			protect: state.3
+			protect: state.3,
+			updated: true
 		}
 	}
 }

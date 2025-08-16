@@ -1,23 +1,13 @@
 use std::net::SocketAddr;
 
-// Incoming messages
 #[derive(Debug, Clone)]
 pub enum ServerMessage
 {
-	Invalid(SocketAddr),
+	Invalid,
 	Register(String),
-	Chat(String, SocketAddr),
+	Chat(String),
 	Disconnected,
-	PlayersList(SocketAddr),
-	SaveGame(String),
-	ChatHistory(usize, SocketAddr),
-	GameState(SocketAddr),
-	ChatLength(SocketAddr),
-	GetSettings(SocketAddr),
-	SaveSettings(SocketAddr),
-	GetInfo,
-	SelectChar(u8),
-	Start
+	WebClient(json::JsonValue, SocketAddr),
 }
 
 impl ServerMessage
@@ -30,27 +20,19 @@ impl ServerMessage
 		match code
 		{
 			1 => Self::Register(String::from_utf8_lossy(&args).to_string()),
-			2 => Self::Chat(String::from_utf8_lossy(&args).to_string(), "0.0.0.0:0".parse().unwrap()),
-			3 => Self::SaveGame(String::from_utf8_lossy(&args).to_string()),
-			4 => Self::GetInfo,
-			5 => Self::SelectChar(args[0]),
-			6 => Self::Start,
-			_ => Self::Invalid("0.0.0.0:0".parse().unwrap())
+			2 => Self::Chat(String::from_utf8_lossy(&args).to_string()),
+			3 => Self::Disconnected,
+			_ => Self::Invalid
 		}
 	}
 }
 
-// Outcoming messages
 #[derive(Debug, Clone)]
 pub enum ClientMessage
 {
-	Login(u8, String, String),
+	Login(u8, String),
 	Disconnected(u8),
-	Chat(String),
-	SetPosition(u16, u16),
-	GetInfo(u16, u8, String, bool, Vec<String>),
-	SelectChar(u8, String),
-	GameReady(u8)
+	Chat(String)
 }
 
 impl ClientMessage
@@ -59,34 +41,22 @@ impl ClientMessage
 	{
 		match self
 		{
-			Self::Login(
-				id, name, class) => [
-					&[1u8], &[id],
-					name.as_bytes(), &[0u8],
-					class.as_bytes(),  &[0u8]
-				].concat().to_vec(),
-			Self::Disconnected(id) => vec![2u8, id],
-			Self::Chat(text) => [&[3u8], text.as_bytes(), &[0u8]].concat().to_vec(),
-			Self::SetPosition(x, y) => [&[4u8] as &[u8],
-					&x.to_le_bytes(), &y.to_le_bytes()
-				].concat().to_vec(),
-			Self::GetInfo(
-				udp, tickRate, checkpoint,
-				extendPlayers, playersList) =>
+			Self::Login(id, name) =>
 			{
-				let mut players = String::new();
-
-				for p in playersList { players = players + &p + "|"; }
 				[
-					&[5u8] as &[u8], &udp.to_le_bytes(), &[tickRate], &[extendPlayers as u8],
-					players.as_bytes(), &[0u8],
-					checkpoint.as_bytes(), &[0u8]
+					&[1u8], &[id], name.as_bytes(), &[0u8]
 				].concat().to_vec()
-			},
-			Self::SelectChar(id, class) => [&[6u8],
-					&[id], class.as_bytes(), &[0u8]
-				].concat().to_vec(),
-			Self::GameReady(ready) => vec![7u8, ready],
+			}
+			Self::Disconnected(id) =>
+			{
+				vec![2u8, id]
+			}
+			Self::Chat(text) =>
+			{
+				[
+					&[3u8], text.as_bytes(), &[0u8]
+				].concat().to_vec()
+			}
 		}
 	}
 }

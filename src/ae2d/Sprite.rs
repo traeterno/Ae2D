@@ -348,6 +348,10 @@ impl Sprite
 		let max = p1.max(p2).max(p3).max(p4);
 		glam::vec4(min.x, min.y, max.x - min.x, max.y - min.y)
 	}
+
+	pub fn getTexture(&self) -> u32 { self.texture }
+
+	pub fn getTexSize(&self) -> glam::Vec2 { self.texSize }
 }
 
 impl Drawable for Sprite
@@ -355,7 +359,7 @@ impl Drawable for Sprite
 	fn draw(&mut self)
 	{
 		self.update();
-		let s = Window::getCamera().getImgShader();
+		let s = Window::getShader(String::from("sprite"));
 		s.activate();
 		s.setInt("tex", 0);
 		s.setVec4("frame",

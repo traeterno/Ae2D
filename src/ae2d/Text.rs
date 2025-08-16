@@ -269,7 +269,7 @@ impl Drawable for Text
 	{
 		if self.update { self.reload(); }
 		if self.vertices == 0 { return; }
-		let s = Window::getCamera().getTxtShader();
+		let s = Window::getShader(String::from("text"));
 		s.activate();
 		s.setInt("tex", 0);
 		s.setMat4("model", self.ts.getMatrix());

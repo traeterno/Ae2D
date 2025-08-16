@@ -8,6 +8,5 @@ pub mod Text;
 pub mod UI;
 pub mod bind;
 pub mod Network;
-pub mod Shapes;
 pub mod World;
 pub mod Entity;

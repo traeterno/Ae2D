@@ -1,4 +1,4 @@
-use super::{Shader::Shader, Transformable::Transformable2D, Window::Window};
+use super::{Transformable::Transformable2D, Window::Window};
 
 pub trait Drawable
 {
@@ -7,10 +7,6 @@ pub trait Drawable
 
 pub struct Camera
 {
-	imgShader: Shader,
-	txtShader: Shader,
-	shapeShader: Shader,
-	cameraShader: Shader,
 	ts: Transformable2D,
 	fbo: u32,
 	sbuf: u32,
@@ -18,7 +14,9 @@ pub struct Camera
 	vao: u32,
 	vbo: u32,
 	uiProj: glam::Mat4,
-	worldProj: glam::Mat4
+	worldProj: glam::Mat4,
+	shapeVBO: u32,
+	shapeVAO: u32
 }
 
 impl Camera
@@ -27,10 +25,6 @@ impl Camera
 	{
 		Self
 		{
-			imgShader: Shader::new(),
-			txtShader: Shader::new(),
-			shapeShader: Shader::new(),
-			cameraShader: Shader::new(),
 			ts: Transformable2D::new(),
 			fbo: 0,
 			sbuf: 0,
@@ -38,17 +32,14 @@ impl Camera
 			vao: 0,
 			vbo: 0,
 			uiProj: glam::Mat4::IDENTITY,
-			worldProj: glam::Mat4::IDENTITY
+			worldProj: glam::Mat4::IDENTITY,
+			shapeVBO: 0,
+			shapeVAO: 0
 		}
 	}
 
 	pub fn load(&mut self)
 	{
-		self.imgShader.load("res/shaders/image.vert", "res/shaders/image.frag");
-		self.txtShader.load("res/shaders/text.vert", "res/shaders/text.frag");
-		self.shapeShader.load("res/shaders/shape.vert", "res/shaders/shape.frag");
-		self.cameraShader.load("res/shaders/camera.vert", "res/shaders/camera.frag");
-
 		let (w, h) = Window::getSize();
 
 		unsafe
@@ -111,6 +102,34 @@ impl Camera
 				vertices.as_ptr() as _,
 				gl::STATIC_DRAW
 			);
+
+			gl::GenBuffers(1, &mut self.shapeVBO);
+			gl::GenVertexArrays(1, &mut self.shapeVAO);
+
+			gl::BindVertexArray(self.shapeVAO);
+			gl::BindBuffer(gl::ARRAY_BUFFER, self.shapeVBO);
+			
+			gl::EnableVertexAttribArray(0);
+			
+			gl::VertexAttribPointer(
+				0, 2, gl::FLOAT,
+				gl::FALSE,
+				(2 * size_of::<f32>()) as i32,
+				0 as _
+			);
+
+			let vertices: [f32; 8] = [
+				0.0, 0.0,
+				1.0, 0.0,
+				1.0, 1.0,
+				0.0, 1.0
+			];
+
+			gl::BufferData(gl::ARRAY_BUFFER,
+				(8 * size_of::<f32>()) as _,
+				vertices.as_ptr() as _,
+				gl::STATIC_DRAW
+			);
 		}
 
 		self.setSize(false, (w, h));
@@ -131,8 +150,9 @@ impl Camera
 		unsafe
 		{
 			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-			self.cameraShader.activate();
-			self.cameraShader.setInt("tex", 0);
+			let s = Window::getShader(String::from("camera"));
+			s.activate();
+			s.setInt("tex", 0);
 			gl::BindTexture(gl::TEXTURE_2D, self.tex);
 			gl::BindVertexArray(self.vao);
 			gl::DrawArrays(gl::TRIANGLE_FAN, 0, 4);
@@ -141,20 +161,9 @@ impl Camera
 
 	pub fn toggleTransform(&mut self, enable: bool)
 	{
-		let m = if enable { self.worldProj } else { self.uiProj };
-		self.imgShader.activate();
-		self.imgShader.setMat4("projection", m);
-		self.txtShader.activate();
-		self.txtShader.setMat4("projection", m);
-		self.shapeShader.activate();
-		self.shapeShader.setMat4("projection", m);
-		let m = if enable {self.ts.getMatrix()} else {glam::Mat4::IDENTITY};
-		self.imgShader.activate();
-		self.imgShader.setMat4("view", m);
-		self.txtShader.activate();
-		self.txtShader.setMat4("view", m);
-		self.shapeShader.activate();
-		self.shapeShader.setMat4("view", m);
+		let proj = if enable { self.worldProj } else { self.uiProj };
+		let view = if enable {self.ts.getMatrix()} else {glam::Mat4::IDENTITY};
+		Window::updateMatrices(proj, view);
 	}
 
 	pub fn setSize(&mut self, mode: bool, s: (i32, i32))
@@ -196,12 +205,18 @@ impl Camera
 		obj.draw();
 	}
 
+	pub fn drawShape(&mut self)
+	{
+		unsafe
+		{
+			gl::BindVertexArray(self.shapeVAO);
+			gl::DrawArrays(gl::QUADS, 0, 4);
+			gl::BindVertexArray(0);
+		}
+	}
+
 	pub fn getTransformable(&mut self) -> &mut Transformable2D
 	{
 		&mut self.ts
 	}
-	
-	pub fn getImgShader(&mut self) -> &mut Shader { &mut self.imgShader }
-	pub fn getTxtShader(&mut self) -> &mut Shader { &mut self.txtShader }
-	pub fn getShapeShader(&mut self) -> &mut Shader { &mut self.shapeShader }
 }

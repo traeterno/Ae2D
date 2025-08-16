@@ -9,16 +9,6 @@ pub struct Shader
 
 impl Shader
 {
-	pub fn new() -> Self
-	{
-		Self
-		{
-			vertex: 0,
-			fragment: 0,
-			program: 0
-		}
-	}
-
 	fn compile(p: &str, t: gl::types::GLenum) -> u32
 	{
 		let res = std::fs::read_to_string(p).unwrap_or(String::new());
@@ -87,14 +77,19 @@ impl Shader
 		}
 	}
 
-	pub fn load(&mut self, vertex: &str, fragment: &str)
+	pub fn load(vertex: &str, fragment: &str) -> Shader
 	{
-		self.vertex = Shader::compile(vertex, gl::VERTEX_SHADER);
-		self.fragment = Shader::compile(fragment, gl::FRAGMENT_SHADER);
-		self.link();
+		let mut s = Shader
+		{
+			fragment: Shader::compile(fragment, gl::FRAGMENT_SHADER),
+			vertex: Shader::compile(vertex, gl::VERTEX_SHADER),
+			program: 0
+		};
+		s.link();
+		s
 	}
 
-	pub fn activate(&mut self)
+	pub fn activate(&self)
 	{
 		unsafe
 		{
@@ -102,7 +97,7 @@ impl Shader
 		}
 	}
 
-	pub fn setInt(&mut self, name: &str, value: i32)
+	pub fn setInt(&self, name: &str, value: i32)
 	{
 		let cn = CString::new(name).unwrap();
 		unsafe
@@ -114,7 +109,7 @@ impl Shader
 		}
 	}
 
-	pub fn setMat4(&mut self, name: &str, value: glam::Mat4)
+	pub fn setMat4(&self, name: &str, value: glam::Mat4)
 	{
 		let cn = CString::new(name).unwrap();
 		unsafe
@@ -128,7 +123,7 @@ impl Shader
 		}
 	}
 
-	pub fn setVec2(&mut self, name: &str, value: glam::Vec2)
+	pub fn setVec2(&self, name: &str, value: glam::Vec2)
 	{
 		let cn = CString::new(name).unwrap();
 		unsafe
@@ -140,7 +135,19 @@ impl Shader
 		}
 	}
 
-	pub fn setVec4(&mut self, name: &str, value: glam::Vec4)
+	pub fn setVec3(&self, name: &str, value: glam::Vec3)
+	{
+		let cn = CString::new(name).unwrap();
+		unsafe
+		{
+			gl::Uniform3f(
+				gl::GetUniformLocation(self.program, cn.as_ptr()),
+				value.x, value.y, value.z
+			);
+		}
+	}
+
+	pub fn setVec4(&self, name: &str, value: glam::Vec4)
 	{
 		let cn = CString::new(name).unwrap();
 		unsafe

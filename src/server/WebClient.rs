@@ -106,7 +106,7 @@ impl WebClient
 				let (cmd, data) = parsed.entries().nth(0).unwrap();
 				WebClient::parsePost(id, cmd.to_string(), data.clone())
 			},
-			Err(_) => ServerMessage::Invalid(id)
+			Err(_) => ServerMessage::WebClient(json::object!{}, id)
 		}
 	}
 
@@ -115,7 +115,7 @@ impl WebClient
 		if !data.is_object()
 		{
 			println!("Wrong request: arguments should be provided as object with properties.");
-			return ServerMessage::Invalid(id);
+			return ServerMessage::WebClient(json::object!{}, id);
 		}
 
 		if cmd == "players" { return ServerMessage::PlayersList(id); }

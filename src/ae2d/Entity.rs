@@ -6,8 +6,6 @@ pub struct Entity
 {
 	script: Lua,
 	id: String,
-	name: String,
-	group: String,
 	sprite: Sprite
 }
 
@@ -19,8 +17,6 @@ impl Entity
 		{
 			script: Lua::new(),
 			id: String::new(),
-			name: String::new(),
-			group: String::new(),
 			sprite: Sprite::default()
 		}
 	}
@@ -28,36 +24,19 @@ impl Entity
 	pub fn load(id: String, path: String) -> Self
 	{
 		let mut ent = Self::new();
-
-		let src = json::parse(
-			&std::fs::read_to_string(path).unwrap()
-		).unwrap();
-
-		for (var, value) in src.entries()
-		{
-			if var == "name"
-			{
-				ent.name = value.as_str().unwrap().to_string();
-			}
-			if var == "group"
-			{
-				ent.group = value.as_str().unwrap().to_string();
-			}
-			if var == "script"
-			{
-				let _ = ent.script.load(
-					std::fs::read_to_string(
-						value.as_str().unwrap()
-					).unwrap()
-				).exec();
-			}
-		}
-
+		
 		bind::sprite(&ent.script);
 		bind::network(&ent.script);
 		bind::world(&ent.script);
 		bind::window(&ent.script);
 		bind::shapes(&ent.script);
+		bind::shaders(&ent.script);
+
+		let _ = ent.script.load(
+			std::fs::read_to_string(
+				path
+			).unwrap()
+		).exec();
 		
 		let _ = ent.script.globals().set(
 			"ScriptID",
@@ -101,11 +80,6 @@ impl Entity
 			}
 		}
 		(0, true)
-	}
-
-	pub fn getName(&self) -> String
-	{
-		self.name.clone()
 	}
 
 	pub fn getID(&self) -> String

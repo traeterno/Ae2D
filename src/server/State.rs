@@ -1,13 +1,46 @@
 use std::{collections::HashMap, net::IpAddr};
 
-use crate::server::Config::Config;
+#[derive(Clone)]
+pub struct Account
+{
+	pub name: String,
+	pub class: String,
+	pub color: (u8, u8, u8)
+}
+
+impl Default for Account
+{
+	fn default() -> Self
+	{
+		Self
+		{
+			name: String::from("noname"),
+			class: String::from("unknown"),
+			color: (255u8, 255u8, 255u8)
+		}
+	}
+}
+
+pub struct Settings
+{
+	pub extendPlayers: bool,
+	pub tickRate: u8,
+	pub firstCP: String,
+	pub sendTime: std::time::Duration
+}
+
+pub struct Save
+{
+	pub checkpoint: String,
+	pub date: String,
+}
 
 pub struct State
 {
-	pub playersList: HashMap<IpAddr, (String, String)>,
-	pub checkpoint: String,
-	pub date: String,
-	pub chatHistory: Vec<(String, String)>
+	pub accounts: HashMap<IpAddr, Account>,
+	pub chatHistory: Vec<(String, String)>,
+	pub settings: Settings,
+	pub save: Save
 }
 
 impl State
@@ -16,13 +49,17 @@ impl State
 	{
 		Self
 		{
-			playersList: HashMap::new(),
-			checkpoint: String::new(),
-			date: String::new(),
+			accounts: HashMap::new(),
 			chatHistory: vec![],
+			settings: Settings
+			{
+				extendPlayers: false, tickRate: 1, firstCP: String::from("main"),
+				sendTime: std::time::Duration::from_secs(1)
+			},
+			save: Save { checkpoint: String::from("main"), date: String::new() }
 		}
 	}
-	fn load(file: String, cfg: &Config) -> Self
+	fn load(file: String) -> Self
 	{
 		let doc = json::parse(&file);
 		if doc.is_err() { println!("Failed to load save."); return Self::new(); }
@@ -37,6 +74,7 @@ impl State
 				{
 					let mut name = String::new();
 					let mut class = String::new();
+					let mut color = (255, 255, 255);
 					for arg in player.entries()
 					{
 						if arg.0 == "name"
@@ -47,61 +85,109 @@ impl State
 						{
 							class = arg.1.as_str().unwrap_or("").to_string();
 						}
+						if arg.0 == "color"
+						{
+							for c in arg.1.entries()
+							{
+								if c.0 == "r" { color.0 = c.1.as_u8().unwrap(); }
+								if c.0 == "g" { color.1 = c.1.as_u8().unwrap(); }
+								if c.0 == "b" { color.2 = c.1.as_u8().unwrap(); }
+							}
+						}
 					}
 
-					state.playersList.insert(
+					state.accounts.insert(
 						ip.parse().unwrap(),
-						(name, class)
+						Account { name, class, color }
 					);
 				}
 			}
-			if section.0 == "checkpoint"
+			if section.0 == "save"
 			{
-				state.checkpoint = section.1.as_str().unwrap().to_string();
+				for (var, value) in section.1.entries()
+				{
+					if var == "checkpoint"
+					{
+						state.save.checkpoint = value.as_str().unwrap().to_string();
+					}
+					if var == "date"
+					{
+						state.save.date = value.as_str().unwrap().to_string();
+					}
+				}
 			}
-			if section.0 == "date"
+			if section.0 == "settings"
 			{
-				state.date = section.1.as_str().unwrap_or("").to_string();
+				for (var, value) in section.1.entries()
+				{
+					if var == "extendPlayers"
+					{
+						state.settings.extendPlayers = value.as_bool().unwrap();
+					}
+					if var == "tickRate"
+					{
+						state.settings.tickRate = value.as_u8().unwrap();
+						state.settings.sendTime = std::time::Duration::from_secs_f32(
+							1.0 / state.settings.tickRate as f32
+						);
+					}
+					if var == "firstCP"
+					{
+						state.settings.firstCP = value.as_str().unwrap().to_string();
+					}
+				}
 			}
 		}
 		
-		if state.checkpoint.is_empty()
+		if state.save.checkpoint.is_empty()
 		{
-			state.checkpoint = cfg.firstCheckpoint.clone();
+			state.save.checkpoint = state.settings.firstCP.clone();
 		}
 		
 		state
 	}
 
-	pub fn init(cfg: &Config) -> Self
+	pub fn init() -> Self
 	{
 		match std::fs::read_to_string("res/system/save.json")
 		{
-			Ok(file) => Self::load(file, cfg),
+			Ok(file) => Self::load(file),
 			Err(_) => Self::new()
 		}
 	}
 
 	pub fn save(&mut self, checkpoint: String)
 	{
-		self.date = State::getDateTime();
-		self.checkpoint = checkpoint;
+		self.save.date = State::getDateTime();
+		self.save.checkpoint = checkpoint;
 
 		let mut players = json::JsonValue::new_object();
-		for (ip, data) in &self.playersList
+		for (ip, data) in &self.accounts
 		{
-			let mut info = json::object! {};
-			let name = data.0.clone();
-			let _ = info.insert("name", name.clone());
-			let _ = info.insert("class", data.1.clone());
-			let _ = players.insert(&ip.to_string(), info);
+			let _ = players.insert(&ip.to_string(), json::object!
+			{
+				name: data.name.clone(),
+				class: data.class.clone(),
+				color: {
+					r: data.color.0,
+					g: data.color.1,
+					b: data.color.2
+				}
+			});
 		}
 
 		let state = json::object!
 		{
 			players: players,
-			date: self.date.clone(),
-			checkpoint: self.checkpoint.clone()
+			save: {
+				date: self.save.date.clone(),
+				checkpoint: self.save.checkpoint.clone()
+			},
+			settings: {
+				extendPlayers: self.settings.extendPlayers,
+				tickRate: self.settings.tickRate,
+				firstCP: self.settings.firstCP.clone()
+			}
 		};
 
 		let _ = std::fs::write(
@@ -110,19 +196,19 @@ impl State
 		);
 	}
 
-	pub fn getPlayerInfo(&mut self, ip: IpAddr) -> (String, String)
+	pub fn getPlayerInfo(&mut self, ip: IpAddr) -> Account
 	{
-		match self.playersList.get(&ip)
+		if let None = self.accounts.get_mut(&ip)
 		{
-			Some(data) => data.clone(),
-			None => (String::from("noname"), String::from("unknown"))
+			self.accounts.insert(ip.clone(), Account::default());
 		}
+		self.accounts.get(&ip).unwrap().clone()
 	}
 	
-	pub fn setPlayerInfo(&mut self, ip: IpAddr, name: String, class: String)
-	{
-		self.playersList.insert(ip, (name, class));
-	}
+	// pub fn updateAccounts(&mut self, ip: IpAddr, pi: Account)
+	// {
+	// 	self.accounts.insert(ip, pi);
+	// }
 
 	pub fn getDateTime() -> String
 	{
@@ -177,5 +263,10 @@ impl State
 			},
 			Err(_) => { return String::new(); }
 		}
+	}
+
+	pub fn getPlayersCount(&self) -> u8
+	{
+		5 * if self.settings.extendPlayers { 2 } else { 1 }
 	}
 }

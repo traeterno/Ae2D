@@ -80,7 +80,7 @@ impl Drawable for Rectangle
 	{
 		self.reload();
 
-		let shader = Window::getCamera().getShapeShader();
+		let shader = Window::getShader(String::from("shape"));
 		shader.activate();
 		shader.setMat4("model", self.ts.getMatrix());
 		shader.setVec4("clr", self.color);

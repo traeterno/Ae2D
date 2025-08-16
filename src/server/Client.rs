@@ -1,14 +1,15 @@
 use std::{io::{ErrorKind, Read, Write}, net::{SocketAddr, TcpStream}};
 
+use crate::server::State::Account;
+
 use super::Transmission::{ClientMessage, ServerMessage};
 
 pub struct Client
 {
-	pub id: u8,
 	pub tcp: Option<TcpStream>,
-	pub name: String,
-	pub class: String,
-	pub udp: Option<SocketAddr>
+	pub udp: Option<SocketAddr>,
+	pub info: Account,
+	pub state: [u8; 9]
 }
 
 impl Client
@@ -17,25 +18,23 @@ impl Client
 	{
 		Self
 		{
-			id: 0,
 			tcp: None,
-			name: String::new(),
-			class: String::new(),
-			udp: None
+			udp: None,
+			info: Account::default(),
+			state: [0u8; 9]
 		}
 	}
-	pub fn connect(tcp: TcpStream, id: u8, name: String, class: String) -> Self
+	pub fn connect(tcp: TcpStream, info: Account) -> Self
 	{
 		let _ = tcp.set_nodelay(true);
 		let _ = tcp.set_nonblocking(true);
 		
 		Self
 		{
-			id,
 			tcp: Some(tcp),
-			name: name.clone(),
-			class: class.clone(),
-			udp: None
+			udp: None,
+			info,
+			state: [0u8; 9]
 		}
 	}
 
@@ -64,7 +63,7 @@ impl Client
 					ErrorKind::ConnectionReset => return Some(ServerMessage::Disconnected),
 					_ =>
 					{
-						println!("Error occured on player {}: {x:?}", self.name);
+						println!("{}: {x:?}", self.info.name);
 						self.tcp = None;
 						return Some(ServerMessage::Disconnected);
 					}

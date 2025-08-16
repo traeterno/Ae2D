@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use glfw::Context;
 
-use crate::ae2d::{Network::Network, World::World};
+use crate::ae2d::{Network::Network, Shader::Shader, World::World};
 
 use super::{Camera::Camera, Programmable::{Programmable, Variable}, UI::UI};
 
@@ -21,7 +21,8 @@ pub struct Window
 	textures: HashMap<String, u32>,
 	ui: UI,
 	net: Network,
-	world: World
+	world: World,
+	shaders: HashMap<String, Shader>
 }
 
 impl Window
@@ -45,7 +46,8 @@ impl Window
 			ui: UI::new(),
 			net: Network::new(),
 			inputEvent: None,
-			world: World::new()
+			world: World::new(),
+			shaders: HashMap::new()
 		}
 	}
 
@@ -228,7 +230,7 @@ impl Window
 				glfw::WindowEvent::Size(w, h) =>
 				{
 					i.cam.setSize(false, (w, h));
-					i.ui.resize(w, h);
+					i.ui.resize();
 					unsafe
 					{
 						gl::Viewport(0, 0, w, h);
@@ -439,6 +441,21 @@ impl Window
 		}
 	}
 
+	pub fn getShader(name: String) -> &'static Shader
+	{
+		if let Some(s) = Window::getInstance().shaders.get(&name)
+		{
+			return s;
+		}
+
+		Window::getInstance().shaders.insert(name.clone(), Shader::load(
+			&(String::from("res/shaders/") + &name + ".vert"),
+			&(String::from("res/shaders/") + &name + ".frag")
+		));
+
+		Window::getInstance().shaders.get(&name).unwrap()
+	}
+
 	pub fn getNetwork() -> &'static mut Network
 	{
 		&mut Window::getInstance().net
@@ -447,5 +464,22 @@ impl Window
 	pub fn getWorld() -> &'static mut World
 	{
 		&mut Window::getInstance().world
+	}
+
+	pub fn clearCache()
+	{
+		let i = Window::getInstance();
+		i.textures.clear();
+		i.shaders.clear();
+	}
+
+	pub fn updateMatrices(proj: glam::Mat4, view: glam::Mat4)
+	{
+		for (_, s) in &mut Window::getInstance().shaders
+		{
+			s.activate();
+			s.setMat4("projection", proj);
+			s.setMat4("view", view);
+		}
 	}
 }
