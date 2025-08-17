@@ -6,7 +6,7 @@ use rand::Rng;
 
 use crate::server::Voting::Voting;
 
-// use super::WebClient::WebClient;
+use super::WebClient::WebClient;
 use super::Transmission::{ClientMessage, ServerMessage};
 use super::State::State;
 use super::Client::Client;
@@ -15,7 +15,6 @@ pub struct Server
 {
 	listener: TcpListener,
 	webListener: TcpListener,
-	// webClient: WebClient,
 	clients: HashMap<u8, Client>,
 	state: State,
 	requests: Vec<(u8, ServerMessage)>,
@@ -81,7 +80,6 @@ impl Server
 		{
 			listener,
 			webListener,
-			// webClient: WebClient::new(),
 			clients,
 			state,
 			requests: vec![],
@@ -123,7 +121,7 @@ impl Server
 		{
 			match client
 			{
-				Ok(_) => todo!("WebClient impl"),
+				Ok(tcp) => WebClient::handle(tcp),
 				Err(_) => break
 			}
 		}
@@ -252,150 +250,7 @@ impl Server
 							msg.clone()
 						));
 					}
-				},
-				ServerMessage::WebClient(_, _) =>
-				{
-					todo!("WebClient request")
 				}
-				// ServerMessage::PlayersList(web) =>
-				// {
-				// 	let mut obj = json::JsonValue::new_array();
-
-				// 	for c in &self.clients
-				// 	{
-				// 		if c.id == 0 { continue; }
-						
-				// 		let class = match c.class.as_str()
-				// 		{
-				// 			"sorcerer" => "Маг",
-				// 			"thief" => "Вор",
-				// 			"knight" => "Рыцарь",
-				// 			"engineer" => "Инженер",
-				// 			"bard" => "Бард",
-				// 			_ => "Неизвестный"
-				// 		};
-
-				// 		let _ = obj.push(json::object!
-				// 		{
-				// 			id: c.id,
-				// 			className: class,
-				// 			name: c.name.clone(),
-				// 			hp: { current: 100, max: 100 },
-				// 			mana: { current: 100, max: 100 }
-				// 		});
-				// 	}
-
-				// 	WebClient::sendResponse(web, WebResponse::Ok(
-				// 		json::stringify(obj), "text/json".to_string()
-				// 	));
-				// },
-				// ServerMessage::SaveGame(checkpoint) =>
-				// {
-				// 	println!("Game saved on {checkpoint}.");
-				// 	self.save(checkpoint);
-				// },
-				// ServerMessage::ChatHistory(mut start, web) =>
-				// {
-				// 	if start > self.state.chatHistory.len() { start = 0; }
-				// 	let count = self.state.chatHistory.len() - start;
-				// 	let mut buf = json::JsonValue::new_array();
-				// 	for i in start..self.state.chatHistory.len()
-				// 	{
-				// 		let (user, msg) = &self.state.chatHistory[
-				// 			if count > 1 { self.state.chatHistory.len() - 1 - i }
-				// 			else { i }
-				// 		];
-				// 		let mut obj = json::JsonValue::new_object();
-				// 		let _ = obj.insert("user", user.clone());
-				// 		let _ = obj.insert("msg", msg.clone());
-				// 		let _ = buf.push(obj);
-				// 	}
-				// 	WebClient::sendResponse(web, WebResponse::Ok(
-				// 		json::stringify(buf), "text/json".to_string()
-				// 	));
-				// },
-				// ServerMessage::GameState(web) =>
-				// {
-				// 	let mut msg = json::JsonValue::new_array();
-
-				// 	let _ = msg.push(json::object!
-				// 	{
-				// 		title: "Сохранение",
-				// 		props: json::object!
-				// 		{
-				// 			"Чекпоинт": self.state.checkpoint.clone(),
-				// 			"Дата сохранения": self.state.date.as_str()
-				// 		}
-				// 	});
-
-				// 	WebClient::sendResponse(web, WebResponse::Ok(
-				// 		json::stringify(msg), "text/json".to_string()
-				// 	));
-				// },
-				// ServerMessage::ChatLength(web) =>
-				// {
-				// 	WebClient::sendResponse(web, WebResponse::Ok(
-				// 		self.state.chatHistory.len().to_string(), "text/json".to_string()
-				// 	));
-				// },
-				// ServerMessage::GetSettings(web) =>
-				// {
-				// 	let mut msg = json::JsonValue::new_object();
-
-				// 	let _ = msg.insert("Сервер", json::object!
-				// 	{
-				// 		extendedPlayers: json::object!
-				// 		{
-				// 			type: "toggle",
-				// 			name: "Расширить количество игроков",
-				// 			value: self.config.extendedPlayers
-				// 		},
-				// 		tickRate: json::object!
-				// 		{
-				// 			type: "range",
-				// 			name: "Частота обновления",
-				// 			value: self.config.tickRate,
-				// 			props: json::object! { min: 1, max: 100 }
-				// 		},
-				// 		firstCP: json::object!
-				// 		{
-				// 			type: "string",
-				// 			name: "Начальный чекпоинт",
-				// 			value: self.config.firstCheckpoint.clone(),
-				// 		}
-				// 	});
-
-				// 	let mut perms = json::JsonValue::new_object();
-					
-				// 	for (name, group) in &self.config.permissions
-				// 	{
-				// 		let p = match group
-				// 		{
-				// 			Permission::Player => "Игрок",
-				// 			Permission::Developer => "Разработчик"
-				// 		};
-				// 		let _ = perms.insert(&name, json::object!
-				// 		{
-				// 			type: "list",
-				// 			name: name.clone(),
-				// 			value: p,
-				// 			props: json::array![ "Игрок", "Разработчик" ]
-				// 		});
-				// 	}
-
-				// 	let _ = msg.insert("Разрешения игроков", perms);
-
-				// 	WebClient::sendResponse(web, WebResponse::Ok(
-				// 		json::stringify(msg), "text/json".to_string()
-				// 	));
-				// },
-				// ServerMessage::SaveSettings(web) =>
-				// {
-				// 	println!("Настройки сервера были изменены.");
-				// 	WebClient::sendResponse(web, WebResponse::Ok(
-				// 		"{}".to_string(), "text/json".to_string()
-				// 	));
-				// },
 				// ServerMessage::GetInfo =>
 				// {
 				// 	let mut players = vec![];
@@ -642,5 +497,17 @@ impl Server
 		if !s.is_empty() { v.push(s); }
 		
 		v
+	}
+
+	pub fn getState() -> &'static mut State { &mut Server::getInstance().state }
+	pub fn getPlayers() -> &'static HashMap<u8, Client> { &Server::getInstance().clients }
+
+	pub fn reloadState()
+	{
+		Self::getInstance().clients.clear();
+		for i in 1..=Self::getState().getPlayersCount()
+		{
+			Self::getInstance().clients.insert(i, Client::default());
+		}
 	}
 }

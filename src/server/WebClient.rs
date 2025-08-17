@@ -1,208 +1,223 @@
-use std::{io::{ErrorKind, Read, Write}, net::{SocketAddr, TcpStream}, time::Duration};
+use std::{io::{Read, Write}, net::TcpStream};
 
 use crate::server::Server::Server;
 
-use super::Transmission::{ServerMessage, WebRequest, WebResponse};
-
-pub struct WebClient
-{
-	pub tcp: Vec<TcpStream>
-}
+pub struct WebClient;
 
 impl WebClient
 {
-	pub fn new() -> Self
+	pub fn handle(mut tcp: TcpStream)
 	{
-		Self { tcp: vec![] }
-	}
-	
-	pub fn connect(&mut self, tcp: TcpStream)
-	{
-		self.tcp.push(tcp);
-	}
-
-	pub fn update(&mut self) -> Vec<ServerMessage>
-	{
-		let mut req = vec![];
-		for i in 0..self.tcp.len()
+		let _ = tcp.set_nonblocking(false);
+		let _ = std::thread::Builder::new()
+			.name(tcp.peer_addr().unwrap().to_string())
+			.spawn(move ||
 		{
-			if i >= self.tcp.len() { break; }
-			let buffer = &mut [0u8; 1024];
-			if self.tcp[i].peer_addr().is_err()
+			let mut buf = [0u8; 1024];
+			let buf = match tcp.read(&mut buf)
 			{
-				self.tcp.swap_remove(i);
-			}
-			let addr = self.tcp[i].peer_addr().unwrap();
-			match self.tcp[i].read(buffer)
+				Ok(size) => String::from_utf8_lossy(&buf[0..size]).to_string(),
+				Err(x) => panic!("{x:#?}")
+			};
+
+			let mut req = buf.split("\r\n");
+			let mut info = req.nth(0).unwrap().split(" ");
+			let action = info.nth(0).unwrap();
+			if action == "GET" { Self::get(tcp, info.nth(0).unwrap()); }
+			else if action == "POST"
 			{
-				Ok(size) =>
+				if let Ok(x) = json::parse(req.last().unwrap())
 				{
-					if size == 0 { continue; }
-					let msg = String::from_utf8_lossy(&buffer[0..size]).to_string();
-					match WebRequest::build(msg)
-					{
-						WebRequest::Invalid => continue,
-						WebRequest::Get(data) => WebClient::get(addr, data),
-						WebRequest::Post(data) => req.push(WebClient::post(addr, data))
-					}
-				},
-				Err(_) => {}
-			}
-		}
-
-		req
-	}
-
-	fn get(id: SocketAddr, data: String)
-	{
-		let data = data.split("?").collect::<Vec<&str>>()[0];
-		if data == "/"
-		{
-			WebClient::sendResponse(id,
-				WebResponse::MovedPermanently(String::from("/index.html")),
-			);
-		}
-		else
-		{
-			let path = String::from("res/web") + &data;
-			WebClient::sendResponse(id,
-				match std::fs::read_to_string(path.clone())
-				{
-					Ok(text) =>
-					{
-						WebResponse::Ok(text, match path.split(".").last().unwrap()
-						{
-							"js" => String::from("text/javascript"),
-							s => String::from("text/") + s
-						})
-					},
-					Err(x) => match x.kind()
-					{
-						ErrorKind::InvalidData => match std::fs::read(path.clone())
-						{
-							Ok(data) =>
-							{
-								WebResponse::OkRaw(data, match path.split(".").last().unwrap()
-								{
-									"png" => String::from("image/png"),
-									"otf" => String::from("application/x-font-opentype"),
-									s => { println!("Unknown file: {s}"); String::from(s) }
-								})
-							},
-							Err(x) => { println!("{x:#?}"); WebResponse::NotFound }
-						},
-						_ => { println!("{x:#?}"); WebResponse::NotFound }
-					}
+					Self::post(tcp, x);
 				}
-			);
-		}
+			}
+		});
 	}
 
-	fn post(id: SocketAddr, data: String) -> ServerMessage
+	fn get(mut tcp: TcpStream, mut path: &str)
 	{
-		match json::parse(&data)
+		if path == "/" { path = "/index.html"; }
+		let (mimetype, bin) = match path.split(".").last().unwrap()
 		{
-			Ok(parsed) => {
-				let (cmd, data) = parsed.entries().nth(0).unwrap();
-				WebClient::parsePost(id, cmd.to_string(), data.clone())
+			"html" => ("text/html", false),
+			"css" => ("text/css", false),
+			"js" => ("text/javascript", false),
+			"png" => ("image/png", true),
+			"otf" => ("application/x-font-opentype", true),
+			x => panic!("Unknown file type: {x}")
+		};
+
+		let data = match bin
+		{
+			true => match std::fs::read(String::from("res/web") + path)
+			{
+				Ok(f) => f, Err(x) => panic!("{path}: {x:?}")
 			},
-			Err(_) => ServerMessage::WebClient(json::object!{}, id)
-		}
+			false => match std::fs::read_to_string(String::from("res/web") + path)
+			{
+				Ok(f) => f.as_bytes().to_vec(), Err(x) => panic!("{path}: {x:?}")
+			}
+		};
+
+		let _ = tcp.write_all(&match data.is_empty()
+		{
+			true => "HTTP/1.1 404 Not Found".as_bytes().to_vec(),
+			false => [(String::from("HTTP/1.1 200 OK") +
+				"\r\nContent-Type: " + mimetype +
+				if bin { "" } else { "; charset=UTF-8" } +
+				"\r\nContent-Length: " + &data.len().to_string() +
+				"\r\n\r\n").as_bytes().to_vec(), data].concat()
+		});
 	}
 
-	fn parsePost(id: SocketAddr, cmd: String, data: json::JsonValue) -> ServerMessage
+	fn post(mut tcp: TcpStream, info: json::JsonValue)
 	{
-		if !data.is_object()
+		let mut msg = String::new();
+		for (kind, args) in info.entries()
 		{
-			println!("Wrong request: arguments should be provided as object with properties.");
-			return ServerMessage::WebClient(json::object!{}, id);
-		}
-
-		if cmd == "players" { return ServerMessage::PlayersList(id); }
-		else if cmd == "chat"
-		{
-			for (section, value) in data.entries()
+			if kind == "chatLength"
 			{
-				if section == "msg"
-				{
-					return ServerMessage::Chat(
-						value.as_str().unwrap_or("").to_string(),
-						id
-					);
-				}
+				msg = Server::getState().chatHistory.len().to_string();
 			}
-			return ServerMessage::Invalid(id);
-		}
-		else if cmd == "getChat"
-		{
-			for (section, value) in data.entries()
+			if kind == "players"
 			{
-				if section == "messagesLength"
+				let p = Server::getPlayers();
+				let mut a = json::array![];
+				for i in 1..=10
 				{
-					return ServerMessage::ChatHistory(value.as_usize().unwrap_or(0), id);
-				}
-			}
-			return ServerMessage::Invalid(id);
-		}
-		else if cmd == "state" { return ServerMessage::GameState(id); }
-		else if cmd == "chatLength" { return ServerMessage::ChatLength(id); }
-		else if cmd == "getSettings" { return ServerMessage::GetSettings(id); }
-		else if cmd == "saveSettings"
-		{
-			let cfg = Server::getInstance().getConfig();
-			for (var, value) in data.entries()
-			{
-				if var == "extendedPlayers"
-				{
-					cfg.extendedPlayers = value.as_bool().unwrap_or(false);
-				}
-				else if var == "tickRate"
-				{
-					cfg.tickRate = value.as_u8().unwrap_or(1);
-					cfg.sendTime = Duration::from_secs_f32(1.0 / cfg.tickRate as f32);
-					cfg.recvTime = Duration::from_secs_f32(0.5 / cfg.tickRate as f32);
-				}
-				else if var == "firstCP"
-				{
-					cfg.firstCheckpoint = value.as_str().unwrap().to_string();
-				}
-				else
-				{
-					cfg.setPermission(var.to_string(),
-					match value.as_str().unwrap_or("")
+					for (id, c) in p
 					{
-						"Разработчик" => super::Config::Permission::Developer,
-						_ => super::Config::Permission::Player,
+						if *id != i || c.info.name == "noname" { continue; }
+						let _ = a.push(json::object!
+						{
+							id: *id,
+							name: c.info.name.clone(),
+							className: c.info.class.clone(),
+							hp: { current: 100, max: 100 },
+							mana: { current: 100, max: 100 }
+						});
+					}
+				}
+				msg = json::stringify(a);
+			}
+			if kind == "state"
+			{
+				let s = Server::getState();
+				let mut a = json::array![];
+				let _ = a.push(json::object!{
+					title: "Сохранение",
+					props: {
+						"Чекпоинт": s.save.checkpoint.clone(),
+						"Дата сохранения": s.save.date.clone()
+					}
+				});
+				msg = json::stringify(a);
+			}
+			if kind == "getSettings"
+			{
+				let s = Server::getState();
+				msg = json::stringify(json::object!
+				{
+					"Сервер": {
+						extendPlayers: {
+							type: "toggle",
+							name: "Расширенная команда игроков",
+							value: s.settings.extendPlayers
+						},
+						tickRate: {
+							type: "range",
+							name: "Частота синхронизации",
+							value: s.settings.tickRate,
+							props: { min: 1, max: 100 }
+						},
+						firstCP: {
+							type: "string",
+							name: "Начальный чекпоинт",
+							value: s.settings.firstCP.clone()
+						}
+					}
+				});
+			}
+			if kind == "saveSettings"
+			{
+				let s = Server::getState();
+				for (var, value) in args.entries()
+				{
+					if var == "extendPlayers"
+					{
+						s.settings.extendPlayers = value.as_bool().unwrap();
+					}
+					if var == "tickRate"
+					{
+						s.settings.tickRate = value.as_u8().unwrap();
+						s.settings.sendTime = std::time::Duration::from_secs_f32(
+							1.0 / s.settings.tickRate as f32
+						);
+					}
+					if var == "firstCP"
+					{
+						s.settings.firstCP = value.as_str().unwrap().to_string();
+					}
+				}
+				Server::reloadState();
+				s.save(s.save.checkpoint.clone());
+				msg = String::from("{}");
+				println!("Настройки игры были изменены.");
+			}
+			if kind == "getChat"
+			{
+				let s = Server::getState();
+				let mut pos = 0;
+				for (var, value) in args.entries()
+				{
+					if var == "messagesLength"
+					{
+						pos = value.as_usize().unwrap();
+					}
+				}
+				if pos > s.chatHistory.len() { pos = 0; }
+				let mut a = json::array![];
+				for i in pos..s.chatHistory.len()
+				{
+					let (user, msg) = &s.chatHistory[i];
+					let _ = a.push(json::object!
+					{
+						user: user.clone(),
+						msg: msg.clone()
 					});
 				}
+				msg = json::stringify(a);
 			}
-			cfg.save();
-			return ServerMessage::SaveSettings(id);
-		}
-		else
-		{
-			println!("Unknown command: {cmd}");
-			return ServerMessage::Invalid(id);
-		}
-	}
-
-	pub fn sendResponse(id: SocketAddr, code: WebResponse)
-	{
-		let c = Server::getInstance().getWebClient();
-		let msg = code.build();
-		for i in 0..c.tcp.len()
-		{
-			let tcp = &mut c.tcp[i];
-			if tcp.peer_addr().unwrap() == id
+			if kind == "chat"
 			{
-				match tcp.write_all(&msg)
+				let s = Server::getState();
+				let mut message = String::new();
+				for (var, value) in args.entries()
 				{
-					Ok(_) => {},
-					Err(x) => { println!("Error occured when sending response: {x:?}"); }
+					if var == "msg"
+					{
+						message = value.as_str().unwrap().to_string();
+					}
 				}
-				c.tcp.remove(i);
-				break;
+				s.chatHistory.push((String::from("WebClient"), message.clone()));
+				msg = json::stringify(json::object!
+				{
+					msg: message
+				});
+				println!("TODO broadcast message from webclient to players");
 			}
 		}
+
+		if msg.is_empty()
+		{
+			panic!("Unknown POST request: {info}");
+		}
+
+		let _ = tcp.write_all((
+			String::from("HTTP/1.1 200 OK") +
+			"\r\nContent-Type: application/json" +
+			"\r\nContent-Length: " + &msg.len().to_string() +
+			"\r\n\r\n" + &msg
+		).as_bytes());
 	}
 }
