@@ -117,7 +117,8 @@ pub struct Text
 	ts: Transformable2D,
 	vertices: i32,
 	size: f32,
-	dimensions: glam::Vec2
+	dimensions: glam::Vec2,
+	color: glam::Vec4
 }
 
 impl Text
@@ -140,7 +141,8 @@ impl Text
 			ts: Transformable2D::new(),
 			vertices: 0,
 			size: 0.0,
-			dimensions: glam::Vec2::ZERO
+			dimensions: glam::Vec2::ZERO,
+			color: glam::Vec4::ONE
 		}
 	}
 
@@ -230,11 +232,6 @@ impl Text
 		}
 	}
 
-	pub fn getTransformable(&mut self) -> &mut Transformable2D
-	{
-		&mut self.ts
-	}
-
 	pub fn setSize(&mut self, size: f32)
 	{
 		self.size = size;
@@ -261,6 +258,14 @@ impl Text
 
 		glam::vec4(min.x, min.y, max.x - min.x, max.y - min.y)
 	}
+
+	pub fn getString(&self) -> String { self.text.clone() }
+
+	pub fn setColor(&mut self, clr: glam::Vec4) { self.color = clr; }
+
+	pub fn getColor(&self) -> glam::Vec4 { self.color }
+	
+	pub fn getTransformable(&mut self) -> &mut Transformable2D { &mut self.ts }
 }
 
 impl Drawable for Text
@@ -273,6 +278,7 @@ impl Drawable for Text
 		s.activate();
 		s.setInt("tex", 0);
 		s.setMat4("model", self.ts.getMatrix());
+		s.setVec4("clr", self.color);
 		unsafe
 		{
 			gl::BindVertexArray(self.vao);

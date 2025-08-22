@@ -1,11 +1,14 @@
 use std::{collections::HashMap, net::IpAddr};
 
-#[derive(Clone)]
+use crate::server::Server::Server;
+
+#[derive(Clone, Debug)]
 pub struct Account
 {
 	pub name: String,
 	pub class: String,
-	pub color: (u8, u8, u8)
+	pub color: (u8, u8, u8),
+	pub hp: u16
 }
 
 impl Default for Account
@@ -16,7 +19,8 @@ impl Default for Account
 		{
 			name: String::from("noname"),
 			class: String::from("unknown"),
-			color: (255u8, 255u8, 255u8)
+			color: (255u8, 255u8, 255u8),
+			hp: 0
 		}
 	}
 }
@@ -98,7 +102,7 @@ impl State
 
 					state.accounts.insert(
 						ip.parse().unwrap(),
-						Account { name, class, color }
+						Account { name, class, color, hp: 0 }
 					);
 				}
 			}
@@ -172,6 +176,20 @@ impl State
 					r: data.color.0,
 					g: data.color.1,
 					b: data.color.2
+				}
+			});
+		}
+		for (_, c) in Server::getPlayers()
+		{
+			if c.tcp.is_none() { continue; }
+			let ip = c.tcp.as_ref().unwrap().peer_addr().unwrap().ip();
+			let _ = players.insert(&ip.to_string(), json::object!{
+				name: c.info.name.clone(),
+				class: c.info.class.clone(),
+				color: {
+					r: c.info.color.0,
+					g: c.info.color.1,
+					b: c.info.color.2
 				}
 			});
 		}

@@ -16,7 +16,8 @@ pub struct Camera
 	uiProj: glam::Mat4,
 	worldProj: glam::Mat4,
 	shapeVBO: u32,
-	shapeVAO: u32
+	shapeVAO: u32,
+	size: glam::Vec2
 }
 
 impl Camera
@@ -34,7 +35,8 @@ impl Camera
 			uiProj: glam::Mat4::IDENTITY,
 			worldProj: glam::Mat4::IDENTITY,
 			shapeVBO: 0,
-			shapeVAO: 0
+			shapeVAO: 0,
+			size: glam::Vec2::ZERO
 		}
 	}
 
@@ -176,6 +178,7 @@ impl Camera
 
 		if mode
 		{
+			self.size = glam::vec2(s.0 as f32, s.1 as f32);
 			self.worldProj = m;
 		}
 		else
@@ -218,5 +221,10 @@ impl Camera
 	pub fn getTransformable(&mut self) -> &mut Transformable2D
 	{
 		&mut self.ts
+	}
+
+	pub fn getSize(&self) -> glam::Vec2
+	{
+		self.size
 	}
 }

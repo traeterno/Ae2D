@@ -11,6 +11,8 @@ pub struct Voting
 
 // TODO block new votings until the last one finishes
 
+// TODO 2 rework everything
+
 impl Voting
 {
 	pub fn new() -> Self

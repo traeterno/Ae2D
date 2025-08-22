@@ -7,12 +7,5 @@ fn main()
 {
 	let server = Server::getInstance();
 	server.setStarted(false);
-
-	println!("Сервер запущен. Ждём игроков...");
-
-	loop
-	{
-		server.listen();
-		server.update();
-	}
+	loop { server.update(); }
 }

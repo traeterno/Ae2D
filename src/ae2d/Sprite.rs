@@ -281,7 +281,7 @@ impl Sprite
 			y += frame.y;
 			x = 0;
 		}
-		self.frameSize = glam::vec2(size.0 as f32, size.1 as f32);
+		self.frameSize = glam::vec2(frame.x as f32, frame.y as f32);
 	}
 
 	pub fn getCurrentFrame(&mut self) -> glam::Vec4

@@ -16,7 +16,7 @@ pub struct PlayerState
 	pub updated: bool
 }
 
-impl PlayerState
+impl Default for PlayerState
 {
 	fn default() -> Self
 	{
@@ -27,30 +27,34 @@ impl PlayerState
 			updated: false
 		}
 	}
+}
 
+impl PlayerState
+{
 	fn parse(data: &[u8]) -> (u8, Self)
 	{
 		let state = data[0];
-		let id = state & 0b00_00_01_11;
 		let moveX: i8;
 		if (state & 0b00_10_00_00) != 0 { moveX = -1; }
 		else if (state & 0b00_01_00_00) != 0 { moveX = 1; }
 		else { moveX = 0; }
-		let jump = (state & 0b00_00_10_00) != 0;
-		let attack = (state & 0b10_00_00_00) != 0;
-		let protect = (state & 0b01_00_00_00) != 0;
-		let px = u16::from_le_bytes([data[1], data[2]]);
-		let py = u16::from_le_bytes([data[3], data[4]]);
-		let vx = u16::from_le_bytes([data[5], data[6]]);
-		let vy = u16::from_le_bytes([data[7], data[8]]);
 
 		return (
-			id,
+			state & 0b00_00_01_11,
 			Self
 			{
-				pos: (px as f32, py as f32),
-				vel: (vx as f32, vy as f32),
-				moveX, jump, attack, protect,
+				pos: (
+					u16::from_be_bytes([data[1], data[2]]) as f32,
+					u16::from_be_bytes([data[3], data[4]]) as f32
+				),
+				vel: (
+					u16::from_be_bytes([data[5], data[6]]) as f32,
+					u16::from_be_bytes([data[7], data[8]]) as f32
+				),
+				moveX,
+				jump: (state & 0b00_00_10_00) != 0,
+				attack: (state & 0b10_00_00_00) != 0,
+				protect: (state & 0b01_00_00_00) != 0,
 				updated: true
 			}
 		);
@@ -66,10 +70,10 @@ impl PlayerState
 		if self.protect { state = state | 0b01_00_00_00; }
 		[
 			&[state],
-			&(self.pos.0.round() as u16).to_le_bytes() as &[u8],
-			&(self.pos.1.round() as u16).to_le_bytes() as &[u8],
-			&(self.vel.0.round() as u16).to_le_bytes() as &[u8],
-			&(self.vel.1.round() as u16).to_le_bytes() as &[u8]
+			&(self.pos.0.round() as u16).to_be_bytes() as &[u8],
+			&(self.pos.1.round() as u16).to_be_bytes() as &[u8],
+			&(self.vel.0.round() as u16).to_be_bytes() as &[u8],
+			&(self.vel.1.round() as u16).to_be_bytes() as &[u8]
 		].concat().to_vec()
 	}
 }
@@ -78,8 +82,6 @@ pub struct Network
 {
 	pub tcp: Option<TcpStream>,
 	pub udp: Option<UdpSocket>,
-	pub name: String,
-	pub class: String,
 	pub id: u8,
 	tickRate: u8,
 	tickTime: Duration,
@@ -97,8 +99,6 @@ impl Network
 		{
 			tcp: None,
 			udp: None,
-			name: String::new(),
-			class: String::new(),
 			id: 0,
 			tickRate: 1,
 			tickTime: Duration::from_secs(1),
@@ -109,7 +109,7 @@ impl Network
 		}
 	}
 
-	pub fn setup(&mut self, udp: u16, tickRate: u8, avatars: HashMap<u8, Account>)
+	pub fn setup(&mut self, udp: u16, tickRate: u8, players: mlua::Table)
 	{
 		let addr = self.tcp.as_mut().unwrap().peer_addr().unwrap().ip()
 			.to_string() + ":" + &udp.to_string();
@@ -123,17 +123,41 @@ impl Network
 		self.tickRate = tickRate;
 		self.tickTime = Duration::from_secs_f32(1.0 / self.tickRate as f32);
 
-		self.avatars = avatars;
+		for entry in players.pairs::<i32, mlua::Table>()
+		{
+			if let Ok((id, data)) = entry
+			{
+				let name: String = data.raw_get("name").unwrap();
+				if name == "noname"
+				{
+					self.avatars.remove(&(id as u8));
+					continue;
+				}
+				let c: mlua::Table = data.raw_get("color").unwrap();
+				self.avatars.insert(id as u8, Account
+				{
+					name: data.raw_get("name").unwrap(),
+					class: data.raw_get("class").unwrap(),
+					color: (
+						c.raw_get("r").unwrap(),
+						c.raw_get("g").unwrap(),
+						c.raw_get("b").unwrap()
+					),
+					hp: 100
+				});
+			}
+		}
 
 		std::thread::spawn(Network::updateThread);
 	}
 
-	pub fn setEP(&mut self, extendPlayers: bool)
+	pub fn setPlayersCount(&mut self, playersCount: u8)
 	{
-		self.state.resize(
-			5 * if extendPlayers { 2 } else { 1 },
-			PlayerState::default()
-		);
+		for i in 1..=playersCount
+		{
+			self.avatars.insert(i, Account::default());
+		}
+		self.state.resize(playersCount as usize, PlayerState::default());
 	}
 
 	pub fn getEP(&self) -> bool
@@ -174,27 +198,30 @@ impl Network
 		let mut timer = Instant::now();
 		'main: loop
 		{
-			while timer.elapsed() < net.tickTime {}
-
 			let data = net.receiveUDP();
 			if data.is_none() { break 'main; }
 			let data = data.unwrap();
-			if data.len() % 9 != 0
+			if data.len() > 0
 			{
-				println!("WRONG UDP PACKET SIZE: {}", data.len());
-				net.udp = None;
-				break 'main;
-			}
-			for i in 0..(data.len() / 9)
-			{
-				let (id, s) = PlayerState::parse(&data[i * 9..(i + 1) * 9]);
-				net.state[(id - 1) as usize] = s;
+				if data.len() % 9 != 0
+				{
+					println!("WRONG UDP PACKET SIZE: {}", data.len());
+					net.udp = None;
+					break 'main;
+				}
+				for i in 0..(data.len() / 9)
+				{
+					let (id, s) = PlayerState::parse(&data[i * 9..(i + 1) * 9]);
+					net.state[(id - 1) as usize] = s;
+				}
 			}
 
-			let udp = net.udp.as_mut().unwrap();
-			let _ = udp.send(&net.mainState.raw(net.id));
-
-			timer = Instant::now();
+			if timer.elapsed() > net.tickTime
+			{
+				let udp = net.udp.as_mut().unwrap();
+				let _ = udp.send(&net.mainState.raw(net.id));
+				timer = Instant::now();
+			}
 		}
 	}
 
@@ -220,6 +247,7 @@ impl Network
 							ErrorKind::ConnectionRefused =>
 							{
 								Window::getNetwork().tcp = None;
+								net.tcpHistory.push(ClientMessage::Disconnected(net.id));
 								break 'main;
 							},
 							_ => {}
@@ -245,21 +273,18 @@ impl Network
 					let name =
 					{
 						let mut len = 0;
-						while buffer[current + 2 + len] != 0
-						{
-							len += 1;
-						}
+						while buffer[current + 2 + len] != 0 { len += 1; }
 						String::from_utf8_lossy(
 							&buffer[current + 2..current + 2 + len]
 						).to_string()
 					};
-					current += 1 + 1 + name.len() + 1;
+					current += 3 + name.len();
 					out.push(ClientMessage::Login(id, name));
 				}
 				2 =>
 				{
 					let id = buffer[current + 1];
-					current += 1 + 1;
+					current += 2;
 					out.push(ClientMessage::Disconnected(id));
 				}
 				3 =>
@@ -267,35 +292,77 @@ impl Network
 					let msg =
 					{
 						let mut len = 0;
-						while buffer[current + 1 + len] != 0
-						{
-							len += 1;
-						}
+						while buffer[current + 1 + len] != 0 { len += 1; }
 						String::from_utf8_lossy(&buffer[
 							current + 1..
 							current + 1 + len
 						]).to_string()
 					};
-					current += 1 + msg.len() + 1;
+					current += 2 + msg.len();
 					out.push(ClientMessage::Chat(msg));
 				}
-				_ => { current += 1; }
+				4 =>
+				{
+					let raw = {
+						let mut len = 0;
+						while buffer[current + 2 + len] != 0 { len += 1; }
+						&buffer[current + 2..current + 2 + len]
+					};
+					out.push(ClientMessage::GameInfo(
+						buffer[current + 1],
+						raw.to_vec()
+					));
+					current += 3 + raw.len();
+				}
+				5 =>
+				{
+					let name = {
+						let mut len = 0;
+						while buffer[current + 7 + len] != 0 { len += 1; }
+						String::from_utf8_lossy(
+							&buffer[current + 7..current + 7 + len]
+						).to_string()
+					};
+					let class = {
+						let mut len = 0;
+						while buffer[current + 8 + name.len() + len] != 0 { len += 1; }
+						String::from_utf8_lossy(
+							&buffer[
+								current + 8 + name.len()..
+								current + 8 + name.len() + len
+							]
+						).to_string()
+					};
+					out.push(ClientMessage::PlayerInfo(
+						buffer[current + 1], Account
+						{
+							name: name.clone(),
+							class: class.clone(),
+							color: (
+								buffer[current + 2],
+								buffer[current + 3],
+								buffer[current + 4]
+							),
+							hp: u16::from_be_bytes([
+								buffer[current + 5],
+								buffer[current + 6]
+							])
+						}
+					));
+					current += 9 + name.len() + class.len();
+				}
+				x =>
+				{
+					println!("Unknown byte: {x}");
+					current += 1;
+				}
 			}
 		}
 		out
 	}
 
-	pub fn setState(&mut self, px: f32, py: f32, vx: f32, vy: f32, state: (i8, bool, bool, bool))
+	pub fn setState(&mut self, s: PlayerState)
 	{
-		self.mainState = PlayerState
-		{
-			pos: (px, py),
-			vel: (vx, vy),
-			moveX: state.0,
-			jump: state.1,
-			attack: state.2,
-			protect: state.3,
-			updated: true
-		}
+		self.mainState = s;
 	}
 }

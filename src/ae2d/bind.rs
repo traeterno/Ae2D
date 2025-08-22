@@ -1,8 +1,8 @@
-use std::{collections::HashMap, io::Write, net::{TcpStream, UdpSocket}};
+use std::{io::Write, net::{TcpStream, UdpSocket}};
 
 use mlua::{Lua, Table};
 
-use crate::{ae2d::{Entity::Entity, Network::Network, Programmable::Variable, Transformable::Transformable2D, World::World}, server::{State::Account, Transmission::ClientMessage}};
+use crate::{ae2d::{Entity::Entity, Network::{Network, PlayerState}, Programmable::Variable, Transformable::Transformable2D, World::World}, server::{State::Account, Transmission::ClientMessage}};
 
 use super::{Sprite::Sprite, Text::Text, Window::Window};
 
@@ -287,6 +287,34 @@ pub fn text(s: &Lua)
 		Ok(())
 	}).unwrap());
 
+	let _ = t.set("getString",
+	s.create_function(|s, _: ()|
+	{
+		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		Ok(txt.getString())
+	}).unwrap());
+
+	let _ = t.set("setColor",
+	s.create_function(|s, x: (u8, u8, u8, u8)|
+	{
+		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		txt.setColor(glam::vec4(
+			x.0 as f32 / 255.0,
+			x.1 as f32 / 255.0,
+			x.2 as f32 / 255.0,
+			x.3 as f32 / 255.0
+		));
+		Ok(())
+	}).unwrap());
+
+	let _ = t.set("getColor",
+	s.create_function(|s, _: ()|
+	{
+		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let c = txt.getColor();
+		Ok((c.x, c.y, c.z, c.w))
+	}).unwrap());
+
 	let _ = t.set("setPosition",
 	s.create_function(|s, x: (f32, f32)|
 	{
@@ -382,22 +410,10 @@ pub fn network(s: &Lua)
 {
 	let t = s.create_table().unwrap();
 
-	let _ = t.raw_set("name",
-	s.create_function(|_, _: ()|
-	{
-		Ok(Window::getNetwork().name.clone())
-	}).unwrap());
-
 	let _ = t.raw_set("id",
 	s.create_function(|_, _: ()|
 	{
 		Ok(Window::getNetwork().id)
-	}).unwrap());
-
-	let _ = t.raw_set("class",
-	s.create_function(|_, _: ()|
-	{
-		Ok(Window::getNetwork().class.clone())
 	}).unwrap());
 
 	let _ = t.raw_set("connect",
@@ -436,38 +452,40 @@ pub fn network(s: &Lua)
 	s.create_function(|_, _: ()|
 	{
 		let net = Window::getNetwork();
-		net.class = String::new();
 		net.id = 0;
-		net.name = String::new();
 		net.tcp = None;
 		net.udp = None;
+		net.avatars.clear();
+		net.state.clear();
 		Ok(())
 	}).unwrap());
-
-	// rewrite login package
-	// split it into two (login(id, name) / info(class, color, hp, mana, skills etc.))
 
 	let _ = t.raw_set("login",
 	s.create_function(|_, data: (u8, String)|
 	{
 		let net = Window::getNetwork();
 		net.id = data.0;
-		net.name = data.1;
+		net.avatars.insert(data.0, Account
+		{
+			name: data.1,
+			..Default::default()
+		});
 		Ok(())
 	}).unwrap());
 
 	let _ = t.raw_set("setState",
 	s.create_function(|_, x: (f32, f32, f32, f32, Table)|
 	{
-		Window::getNetwork().setState(
-			x.0, x.1, x.2, x.3,
-			(
-				x.4.raw_get("MoveX").unwrap(),
-				x.4.raw_get("Jump").unwrap(),
-				x.4.raw_get("Attack").unwrap(),
-				x.4.raw_get("Protect").unwrap()
-			)
-		);
+		Window::getNetwork().setState(PlayerState
+		{
+			pos: (x.0, x.1),
+			vel: (x.2, x.3),
+			moveX: x.4.raw_get("MoveX").unwrap(),
+			jump: x.4.raw_get("Jump").unwrap(),
+			attack: x.4.raw_get("Attack").unwrap(),
+			protect: x.4.raw_get("Protect").unwrap(),
+			updated: true
+		});
 		Ok(())
 	}).unwrap());
 
@@ -501,6 +519,8 @@ pub fn network(s: &Lua)
 				ClientMessage::Login(..) => if id == 1 { return Ok(true) }
 				ClientMessage::Disconnected(..) => if id == 2 { return Ok(true) }
 				ClientMessage::Chat(..) => if id == 3 { return Ok(true) }
+				ClientMessage::GameInfo(..) => if id == 4 { return Ok(true) }
+				ClientMessage::PlayerInfo(..) => if id == 5 { return Ok(true) }
 			}
 		}
 		Ok(false)
@@ -536,6 +556,62 @@ pub fn network(s: &Lua)
 					let _ = t.raw_set("msg", message.clone());
 					found = true;
 				}
+				ClientMessage::GameInfo(kind, info) =>
+				{
+					if msg != 4 { continue; }
+					let _ = t.raw_set("kind", *kind);
+					match kind
+					{
+						0 =>
+						{
+							let _ = t.raw_set("playersCount", info[0]);
+							let _ = t.raw_set("activePlayersCount", info[1]);
+							let _ = t.raw_set("tickRate", info[2]);
+							let _ = t.raw_set(
+								"udp",
+								u16::from_be_bytes([info[3], info[4]])
+							);
+						}
+						1 =>
+						{
+							let raw = String::from_utf8_lossy(&info).to_string();
+							for p in raw.split("/")
+							{
+								if p.is_empty() { continue; }
+								let i: Vec<&str> = p.split(",").collect();
+								let a = s.create_table().unwrap();
+								let _ = a.raw_set("name", i[1]);
+								let _ = a.raw_set("class", i[2]);
+								let _ = a.raw_set("clrR", i[3].parse::<u8>().unwrap());
+								let _ = a.raw_set("clrG", i[4].parse::<u8>().unwrap());
+								let _ = a.raw_set("clrB", i[5].parse::<u8>().unwrap());
+								let _ = a.raw_set("id", i[0].parse::<u8>().unwrap());
+								let _ = t.raw_push(a);
+							}
+						}
+						2 =>
+						{
+							let _ = t.raw_set("ready", info[0]);
+						}
+						x =>
+						{
+							println!("Unknown GameInfo: #{x}");
+						}
+					}
+					found = true;
+				}
+				ClientMessage::PlayerInfo(id, info) =>
+				{
+					if msg != 5 { continue; }
+					let _ = t.raw_set("id", *id);
+					let _ = t.raw_set("name", info.name.clone());
+					let _ = t.raw_set("class", info.class.clone());
+					let _ = t.raw_set("clrR", info.color.0);
+					let _ = t.raw_set("clrG", info.color.1);
+					let _ = t.raw_set("clrB", info.color.2);
+					let _ = t.raw_set("hp", info.hp);
+					found = true;
+				}
 			}
 			if found { net.tcpHistory.swap_remove(i); break; }
 		}
@@ -552,71 +628,99 @@ pub fn network(s: &Lua)
 			1 =>
 			{
 				let name: String = x.1.get("name").unwrap();
-				[&[1u8], name.as_bytes()].concat()
+				[&[1u8], name.as_bytes(), &[0u8]].concat()
 			}
 			2 =>
 			{
 				let msg: String = x.1.get("msg").unwrap();
-				[&[2u8], msg.as_bytes()].concat()
+				[&[2u8], msg.as_bytes(), &[0u8]].concat()
+			}
+			3 =>
+			{
+				vec![3u8]
 			}
 			4 =>
 			{
-				vec![4u8]
+				vec![
+					4u8,
+					x.1.get("kind").unwrap()
+				]
 			}
 			5 =>
 			{
-				let id: u8 = x.1.get("id").unwrap();
-				vec![5u8, id]
+				vec![
+					5u8,
+					x.1.get("id").unwrap()
+				]
 			}
 			6 =>
 			{
-				vec![6u8]
+				if let Some(name) = x.1
+					.raw_get::<mlua::Value>("name").unwrap().as_string_lossy()
+				{
+					[
+						&[6u8], &[0u8],
+						name.as_bytes(), &[0u8]
+					].concat()
+				}
+				else if let Some(class) = x.1
+					.raw_get::<mlua::Value>("class").unwrap().as_string_lossy()
+				{
+					[
+						&[6u8], &[1u8],
+						class.as_bytes(), &[0u8]
+					].concat()
+				}
+				else if let Some(color) = x.1
+					.raw_get::<mlua::Value>("color").unwrap().as_table()
+				{
+					vec![
+						6u8, 2u8,
+						color.raw_get("r").unwrap(),
+						color.raw_get("g").unwrap(),
+						color.raw_get("b").unwrap(),
+						0u8
+					]
+				}
+				else if let Some(hp) = x.1
+					.raw_get::<mlua::Value>("hp").unwrap().as_u32()
+				{
+					[
+						&[6u8], &[3u8],
+						&(hp as u16).to_be_bytes() as &[u8],
+						&[0u8]
+					].concat()
+				}
+				else { vec![] }
 			}
 			7 =>
 			{
-				let r: u8 = x.1.get("r").unwrap();
-				let g: u8 = x.1.get("g").unwrap();
-				let b: u8 = x.1.get("b").unwrap();
-				vec![7u8, r, g, b]
+				if let Some(start) = x.1
+					.raw_get::<mlua::Value>("start").unwrap().as_boolean()
+				{
+					vec![
+						7u8, 0u8,
+						start as u8, 0u8
+					]
+				}
+				else if let Some(save) = x.1
+					.raw_get::<mlua::Value>("save").unwrap().as_string_lossy()
+				{
+					[
+						&[7u8], &[1u8],
+						save.as_bytes(),
+						&[0u8]
+					].concat()
+				}
+				else { vec![] }
 			}
-			_ => vec![]
+			x =>
+			{
+				println!("Unknown ServerMessage: {x}");
+				vec![]
+			}
 		});
 		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("setup", 
-	s.create_function(|_, x: (u16, u8, Table)|
-	{
-		let mut a = HashMap::new();
-		for i in 1..=x.2.raw_len()
-		{
-			let p = x.2.get::<Table>(i).unwrap();
-			a.insert(
-				p.get("id").unwrap(),
-				Account
-				{
-					name: p.get("name").unwrap(),
-					class: p.get("class").unwrap(),
-					color: (0, 0, 0)
-					// p.get("color").unwrap()
-				}
-			);
-		}
-		Window::getNetwork().setup(x.0, x.1, a);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("setEP",
-	s.create_function(|_, x: bool|
-	{
-		Window::getNetwork().setEP(x);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("getEP",
-	s.create_function(|_, _: ()|
-	{
-		Ok(Window::getNetwork().getEP())
 	}).unwrap());
 
 	let _ = t.raw_set("serverIP",
@@ -639,9 +743,8 @@ pub fn network(s: &Lua)
 			{
 				Ok((_, addr)) =>
 				{
-					let ip = addr.ip().to_string() + ":" +
-						&u16::from_le_bytes([buffer[0], buffer[1]]).to_string();
-					return Ok(ip);
+					let tcp = u16::from_be_bytes([buffer[0], buffer[1]]);
+					return Ok(addr.ip().to_string() + ":" + &tcp.to_string());
 				}
 				Err(x) => match x.kind()
 				{
@@ -652,16 +755,6 @@ pub fn network(s: &Lua)
 			}
 		}
 		Ok(String::new())
-	}).unwrap());
-	
-	let _ = t.raw_set("getPlayer",
-	s.create_function(|_, id: u8|
-	{
-		return Ok(());
-		// let def = Account::default();
-		// let data = Window::getNetwork().avatars
-		// 	.get(&id).unwrap_or(&def);
-		// Ok(data.clone())
 	}).unwrap());
 
 	let _ = t.raw_set("playersCount",
@@ -674,6 +767,40 @@ pub fn network(s: &Lua)
 	s.create_function(|_, id: u8|
 	{
 		Ok(Window::getNetwork().state[(id - 1) as usize].updated)
+	}).unwrap());
+
+	let _ = t.raw_set("setup",
+	s.create_function(|_, x: (u16, u8, Table)|
+	{
+		Window::getNetwork().setup(x.0, x.1, x.2);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("setPlayersCount",
+	s.create_function(|_, x: u8|
+	{
+		Window::getNetwork().setPlayersCount(x);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("getEP",
+	s.create_function(|_, _: ()|
+	{
+		Ok(Window::getNetwork().getEP())
+	}).unwrap());
+
+	let _ = t.raw_set("getPlayer",
+	s.create_function(|s, id: u8|
+	{
+		let p = s.create_table().unwrap();
+		let a = Window::getNetwork().avatars.get(&id).unwrap();
+		let _ = p.raw_set("name", a.name.clone());
+		let _ = p.raw_set("class", a.class.clone());
+		let _ = p.raw_set("clrR", a.color.0);
+		let _ = p.raw_set("clrG", a.color.1);
+		let _ = p.raw_set("clrB", a.color.2);
+		let _ = p.raw_set("hp", a.hp);
+		Ok(p)
 	}).unwrap());
 
 	let _ = s.globals().set("network", t);
@@ -841,10 +968,26 @@ pub fn window(script: &Lua)
 		Ok(())
 	}).unwrap());
 
-	let _ = table.raw_set("readFile",
-	script.create_function(|_, x: String|
+	let _ = table.raw_set("screenToWorld",
+	script.create_function(|_, x: (f32, f32)|
 	{
-		Ok(std::fs::read_to_string(x).unwrap_or_default())
+		let a = Window::getCamera().getTransformable().getPosition();
+		let s1 = Window::getCamera().getSize();
+		let s2 = Window::getSize();
+		let s3 = glam::vec2(s1.x / s2.0 as f32, s1.y / s2.1 as f32);
+		let p = -a - s1 / 2.0 + glam::vec2(x.0 * s3.x, x.1 * s3.y);
+		Ok((p.x, p.y))
+	}).unwrap());
+
+	let _ = table.raw_set("worldToScreen",
+	script.create_function(|_, x: (f32, f32)|
+	{
+		let t = Window::getCamera().getTransformable();
+		let p = t.getMatrix().transform_point3(glam::vec3(x.0, x.1, 0.0));
+		let s1 = Window::getCamera().getSize();
+		let s2 = Window::getSize();
+		let s3 = glam::vec2(s2.0 as f32 / s1.x, s2.1 as f32 / s1.y);
+		Ok((p.x * s3.x, p.y * s3.y))
 	}).unwrap());
 
 	let _ = script.globals().raw_set("window", table);

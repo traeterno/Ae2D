@@ -203,7 +203,7 @@ impl Window
 		i.mouseEvent = None;
 		i.keyEvent = None;
 		i.inputEvent = None;
-		i.deltaTime = i.lastTime.elapsed().as_secs_f32();
+		i.deltaTime = i.lastTime.elapsed().as_secs_f32().min(0.1);
 		i.lastTime = std::time::Instant::now();
 		
 		let events = i.events.as_ref().unwrap();
