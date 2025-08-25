@@ -18,7 +18,6 @@ glam = "*"
 stb_image = "*"
 cpal = "*"
 json = "*"
-rand = "*"
 
 [dependencies.glfw]
 version = "*"

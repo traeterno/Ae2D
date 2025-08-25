@@ -1,5 +1,5 @@
 #![allow(non_snake_case, static_mut_refs, dead_code)]
-// #![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 mod ae2d;
 mod server;
 

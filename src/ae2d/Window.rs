@@ -22,7 +22,8 @@ pub struct Window
 	ui: UI,
 	net: Network,
 	world: World,
-	shaders: HashMap<String, Shader>
+	shaders: HashMap<String, Shader>,
+	server: Option<std::process::Child>
 }
 
 impl Window
@@ -47,7 +48,8 @@ impl Window
 			net: Network::new(),
 			inputEvent: None,
 			world: World::new(),
-			shaders: HashMap::new()
+			shaders: HashMap::new(),
+			server: None
 		}
 	}
 
@@ -481,5 +483,17 @@ impl Window
 			s.setMat4("projection", proj);
 			s.setMat4("view", view);
 		}
+	}
+
+	pub fn launchServer()
+	{
+		let i = Window::getInstance();
+		let path = if cfg!(debug_assertions)
+		{
+			"./target/debug/envell.exe"
+		} else { "./res/system/server.exe" };
+		i.server = Some(
+			std::process::Command::new(path).arg("silent").spawn().unwrap()
+		);
 	}
 }

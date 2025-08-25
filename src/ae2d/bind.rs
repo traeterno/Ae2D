@@ -810,6 +810,13 @@ pub fn window(script: &Lua)
 {
 	let table = script.create_table().unwrap();
 
+	let _ = table.raw_set("launchServer",
+	script.create_function(|_, _: ()|
+	{
+		Window::launchServer();
+		Ok(())
+	}).unwrap());
+
 	let _ = table.raw_set("size",
 	script.create_function(|_, _: ()|
 	{

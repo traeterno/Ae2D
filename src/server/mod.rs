@@ -3,4 +3,3 @@ pub mod Server;
 pub mod State;
 pub mod Transmission;
 pub mod WebClient;
-pub mod Voting;

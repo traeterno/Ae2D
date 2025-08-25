@@ -1,9 +1,6 @@
 use std::collections::HashMap;
-use std::io::Write;
 use std::time::{Duration, Instant};
 use std::net::{TcpListener, UdpSocket};
-
-use crate::server::Voting::Voting;
 
 use super::WebClient::WebClient;
 use super::Transmission::{ClientMessage, ServerMessage};
@@ -19,7 +16,7 @@ pub struct Server
 	udp: UdpSocket,
 	sendTimer: Instant,
 	started: bool,
-	voting: Voting
+	silent: bool
 }
 
 impl Server
@@ -80,18 +77,12 @@ impl Server
 				match UdpSocket::bind("0.0.0.0:0")
 				{
 					Ok(s) => { let _ = s.set_nonblocking(true); s }
-					// Ok(s) =>
-					// {
-					// 	let _ = s.set_read_timeout(Some(Duration::from_secs(1)));
-					// 	let _ = s.set_write_timeout(Some(Duration::from_secs(1)));
-					// 	s
-					// },
 					Err(x) => panic!("Сокет UDP не создан: {x:?}")
 				}
 			})(),
 			sendTimer: Instant::now(),
 			started: false,
-			voting: Voting::new()
+			silent: false
 		}
 	}
 
@@ -179,23 +170,6 @@ impl Server
 				Err(_) => { break 'udp; }
 			}
 		}
-
-		if self.voting.active() && self.voting.finished()
-		{
-			let (opt, count) = self.voting.getResult();
-			let msg = format!(
-				"Результат голосования: {opt} ({count} голосов)",
-			);
-			println!("{msg}");
-			self.broadcast.push(ClientMessage::Chat(msg));
-
-			let msg = format!(
-				"/votingResult \"{}\" \"{opt}\"",
-				self.voting.getTopic()
-			);
-			self.broadcast.push(ClientMessage::Chat(msg));
-			self.voting = Voting::new();
-		}
 		
 		self.handleRequests();
 		self.broadcastTCP();
@@ -230,7 +204,6 @@ impl Server
 				{
 					println!("P{id} вышел из игры.");
 					self.broadcast.push(ClientMessage::Disconnected(id));
-					self.checkReady();
 				}
 				ServerMessage::Chat(mut msg) =>
 				{
@@ -407,7 +380,6 @@ impl Server
 
 	fn broadcastState(&mut self)
 	{
-		let t = Instant::now();
 		for i in 1..=self.state.getPlayersCount()
 		{
 			let addr = self.clients.get(&i).unwrap().udp;
@@ -424,8 +396,6 @@ impl Server
 
 			let _ = self.udp.send_to(&buffer, addr);
 		}
-		print!("{}mcs   \r", t.elapsed().as_micros());
-		let _ = std::io::stdout().flush();
 	}
 	
 	fn getAvailablePlayerID(&self) -> u8
@@ -506,10 +476,19 @@ impl Server
 
 	pub fn checkReady(&mut self)
 	{
-		if self.getActivePlayersCount() == 0 && self.started
+		if self.getActivePlayersCount() == 0
 		{
-			println!("Все игроки вышли. Возвращаемся в меню...");
-			self.started = false;
+			println!("Все игроки вышли.");
+			if self.started
+			{
+				println!("Возвращаемся в меню...");
+				self.started = false;
+			}
+			if self.silent
+			{
+				println!("Silent-режим запущен. Останавливаем сервер.");
+				std::process::exit(0);
+			}
 			return;
 		}
 
@@ -545,5 +524,10 @@ impl Server
 			if c.tcp.is_some() { count += 1; }
 		}
 		count
+	}
+
+	pub fn setSilent(&mut self, silent: bool)
+	{
+		self.silent = silent;
 	}
 }
