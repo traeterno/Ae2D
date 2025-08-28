@@ -24,6 +24,7 @@ impl Client
 			state: [0u8; 9]
 		}
 	}
+
 	pub fn connect(tcp: TcpStream, info: Account) -> Self
 	{
 		let _ = tcp.set_nodelay(true);
@@ -82,18 +83,6 @@ impl Client
 			{
 				1 =>
 				{
-					let name = {
-						let mut len = 0;
-						while data[current + 1 + len] != 0 { len += 1; }
-						String::from_utf8_lossy(
-							&data[current + 1..current + 1 + len]
-						).to_string()
-					};
-					current += 1 + name.len() + 1;
-					out.push(ServerMessage::Register(name));
-				}
-				2 =>
-				{
 					let msg = {
 						let mut len = 0;
 						while data[current + 1 + len] != 0 { len += 1; }
@@ -104,22 +93,22 @@ impl Client
 					current += 1 + msg.len() + 1;
 					out.push(ServerMessage::Chat(msg));
 				}
-				3 =>
+				2 =>
 				{
 					current += 1;
 					out.push(ServerMessage::Disconnected);
 				}
-				4 =>
+				3 =>
 				{
 					out.push(ServerMessage::GetGameInfo(data[current + 1]));
 					current += 2;
 				}
-				5 =>
+				4 =>
 				{
-					out.push(ServerMessage::GetPlayerInfo(data[current + 1]));
-					current += 2;
+					out.push(ServerMessage::GetPlayerInfo(data[current + 1], data[current + 2]));
+					current += 3;
 				}
-				6 =>
+				5 =>
 				{
 					let raw = {
 						let mut len = 0;
@@ -156,7 +145,7 @@ impl Client
 						current += 3 + raw.len();
 					}
 				}
-				7 =>
+				6 =>
 				{
 					let raw = {
 						let mut len = 0;

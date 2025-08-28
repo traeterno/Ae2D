@@ -565,8 +565,8 @@ pub fn network(s: &Lua)
 						0 =>
 						{
 							let _ = t.raw_set("playersCount", info[0]);
-							let _ = t.raw_set("activePlayersCount", info[1]);
-							let _ = t.raw_set("tickRate", info[2]);
+							let _ = t.raw_set("tickRate", info[1]);
+							let _ = t.raw_set("maxItemCellSize", info[2]);
 							let _ = t.raw_set(
 								"udp",
 								u16::from_be_bytes([info[3], info[4]])
@@ -574,25 +574,9 @@ pub fn network(s: &Lua)
 						}
 						1 =>
 						{
-							let raw = String::from_utf8_lossy(&info).to_string();
-							for p in raw.split("/")
-							{
-								if p.is_empty() { continue; }
-								let i: Vec<&str> = p.split(",").collect();
-								let a = s.create_table().unwrap();
-								let _ = a.raw_set("name", i[1]);
-								let _ = a.raw_set("class", i[2]);
-								let _ = a.raw_set("clrR", i[3].parse::<u8>().unwrap());
-								let _ = a.raw_set("clrG", i[4].parse::<u8>().unwrap());
-								let _ = a.raw_set("clrB", i[5].parse::<u8>().unwrap());
-								let _ = a.raw_set("id", i[0].parse::<u8>().unwrap());
-								let _ = t.raw_push(a);
-							}
-						}
-						2 =>
-						{
 							let _ = t.raw_set("ready", info[0]);
 						}
+						2 => {}
 						x =>
 						{
 							println!("Unknown GameInfo: #{x}");
@@ -600,16 +584,30 @@ pub fn network(s: &Lua)
 					}
 					found = true;
 				}
-				ClientMessage::PlayerInfo(id, info) =>
+				ClientMessage::PlayerInfo(id, info, raw) =>
 				{
 					if msg != 5 { continue; }
 					let _ = t.raw_set("id", *id);
-					let _ = t.raw_set("name", info.name.clone());
-					let _ = t.raw_set("class", info.class.clone());
-					let _ = t.raw_set("clrR", info.color.0);
-					let _ = t.raw_set("clrG", info.color.1);
-					let _ = t.raw_set("clrB", info.color.2);
-					let _ = t.raw_set("hp", info.hp);
+					let _ = t.raw_set("kind", *info);
+					match *info
+					{
+						0 => t.raw_set(
+							"name", String::from_utf8_lossy(&raw).to_string()
+						).unwrap(),
+						1 => t.raw_set(
+							"class", String::from_utf8_lossy(&raw).to_string()
+						).unwrap(),
+						2 =>
+						{
+							let _ = t.raw_set("clrR", raw[0]);
+							let _ = t.raw_set("clrG", raw[1]);
+							let _ = t.raw_set("clrB", raw[2]);
+						}
+						3 => t.raw_set(
+							"hp", u16::from_be_bytes([raw[0], raw[1]])
+						).unwrap(),
+						x => println!("Invalid PlayerInfo: {x}")
+					}
 					found = true;
 				}
 			}
@@ -623,43 +621,39 @@ pub fn network(s: &Lua)
 	s.create_function(|_, x: (u8, Table)|
 	{
 		let tcp = Window::getNetwork().tcp.as_mut().unwrap();
-		let _ = tcp.write(&match x.0
+		if let Err(x) = tcp.write(&match x.0
 		{
 			1 =>
 			{
-				let name: String = x.1.get("name").unwrap();
-				[&[1u8], name.as_bytes(), &[0u8]].concat()
+				let msg: String = x.1.get("msg").unwrap();
+				[&[1u8], msg.as_bytes(), &[0u8]].concat()
 			}
 			2 =>
 			{
-				let msg: String = x.1.get("msg").unwrap();
-				[&[2u8], msg.as_bytes(), &[0u8]].concat()
+				vec![2u8]
 			}
 			3 =>
 			{
-				vec![3u8]
+				vec![
+					3u8,
+					x.1.get("kind").unwrap()
+				]
 			}
 			4 =>
 			{
 				vec![
 					4u8,
+					x.1.get("id").unwrap(),
 					x.1.get("kind").unwrap()
 				]
 			}
 			5 =>
 			{
-				vec![
-					5u8,
-					x.1.get("id").unwrap()
-				]
-			}
-			6 =>
-			{
 				if let Some(name) = x.1
 					.raw_get::<mlua::Value>("name").unwrap().as_string_lossy()
 				{
 					[
-						&[6u8], &[0u8],
+						&[5u8], &[0u8],
 						name.as_bytes(), &[0u8]
 					].concat()
 				}
@@ -667,7 +661,7 @@ pub fn network(s: &Lua)
 					.raw_get::<mlua::Value>("class").unwrap().as_string_lossy()
 				{
 					[
-						&[6u8], &[1u8],
+						&[5u8], &[1u8],
 						class.as_bytes(), &[0u8]
 					].concat()
 				}
@@ -675,7 +669,7 @@ pub fn network(s: &Lua)
 					.raw_get::<mlua::Value>("color").unwrap().as_table()
 				{
 					vec![
-						6u8, 2u8,
+						5u8, 2u8,
 						color.raw_get("r").unwrap(),
 						color.raw_get("g").unwrap(),
 						color.raw_get("b").unwrap(),
@@ -686,20 +680,20 @@ pub fn network(s: &Lua)
 					.raw_get::<mlua::Value>("hp").unwrap().as_u32()
 				{
 					[
-						&[6u8], &[3u8],
+						&[5u8], &[3u8],
 						&(hp as u16).to_be_bytes() as &[u8],
 						&[0u8]
 					].concat()
 				}
 				else { vec![] }
 			}
-			7 =>
+			6 =>
 			{
 				if let Some(start) = x.1
 					.raw_get::<mlua::Value>("start").unwrap().as_boolean()
 				{
 					vec![
-						7u8, 0u8,
+						6u8, 0u8,
 						start as u8, 0u8
 					]
 				}
@@ -707,7 +701,7 @@ pub fn network(s: &Lua)
 					.raw_get::<mlua::Value>("save").unwrap().as_string_lossy()
 				{
 					[
-						&[7u8], &[1u8],
+						&[6u8], &[1u8],
 						save.as_bytes(),
 						&[0u8]
 					].concat()
@@ -719,7 +713,7 @@ pub fn network(s: &Lua)
 				println!("Unknown ServerMessage: {x}");
 				vec![]
 			}
-		});
+		}) { println!("Sending error: {x:?}"); }
 		Ok(())
 	}).unwrap());
 
@@ -803,6 +797,25 @@ pub fn network(s: &Lua)
 		Ok(p)
 	}).unwrap());
 
+	let _ = t.raw_set("setPlayerInfo",
+	s.create_function(|_, x: (u8, mlua::Table)|
+	{
+		let a = Window::getNetwork().avatars.get_mut(&x.0).unwrap();
+		for res in x.1.pairs::<String, mlua::Value>()
+		{
+			if let Ok((k, p)) = res
+			{
+				if k == "name" { a.name = p.as_string_lossy().unwrap(); }
+				if k == "class" { a.class = p.as_string_lossy().unwrap(); }
+				if k == "clrR" { a.color.0 = p.as_u32().unwrap() as u8; }
+				if k == "clrG" { a.color.1 = p.as_u32().unwrap() as u8; }
+				if k == "clrB" { a.color.2 = p.as_u32().unwrap() as u8; }
+				if k == "hp" { a.hp = p.as_u32().unwrap() as u16; }
+			}
+		}
+		Ok(())
+	}).unwrap());
+
 	let _ = s.globals().set("network", t);
 }
 
@@ -881,6 +894,13 @@ pub fn window(script: &Lua)
 	script.create_function(|_, _: ()|
 	{
 		Ok(Window::getInstance().window.as_ref().unwrap().get_cursor_pos())
+	}).unwrap());
+
+	let _ = table.raw_set("setMousePos",
+	script.create_function(|_, x: (f32, f32)|
+	{
+		Window::setMousePos(glam::vec2(x.0, x.1));
+		Ok(())
 	}).unwrap());
 	
 	let _ = table.raw_set("mousePressed",

@@ -30,6 +30,7 @@ pub struct Settings
 	pub extendPlayers: bool,
 	pub tickRate: u8,
 	pub firstCP: String,
+	pub maxItemCellSize: u8,
 	pub sendTime: std::time::Duration
 }
 
@@ -58,6 +59,7 @@ impl State
 			settings: Settings
 			{
 				extendPlayers: false, tickRate: 1, firstCP: String::from("main"),
+				maxItemCellSize: 64,
 				sendTime: std::time::Duration::from_secs(1)
 			},
 			save: Save { checkpoint: String::from("main"), date: String::new() }
@@ -139,6 +141,10 @@ impl State
 					{
 						state.settings.firstCP = value.as_str().unwrap().to_string();
 					}
+					if var == "maxItemCellSize"
+					{
+						state.settings.maxItemCellSize = value.as_u8().unwrap();
+					}
 				}
 			}
 		}
@@ -204,7 +210,8 @@ impl State
 			settings: {
 				extendPlayers: self.settings.extendPlayers,
 				tickRate: self.settings.tickRate,
-				firstCP: self.settings.firstCP.clone()
+				firstCP: self.settings.firstCP.clone(),
+				maxItemCellSize: self.settings.maxItemCellSize
 			}
 		};
 

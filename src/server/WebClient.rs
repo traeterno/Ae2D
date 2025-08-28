@@ -134,6 +134,12 @@ impl WebClient
 							type: "string",
 							name: "Начальный чекпоинт",
 							value: s.settings.firstCP.clone()
+						},
+						maxItemCellSize: {
+							type: "range",
+							name: "Максимальное количество предметов в ячейке инвентаря",
+							value: s.settings.maxItemCellSize,
+							props: { min: 1, max: 255 }
 						}
 					}
 				});
@@ -157,6 +163,10 @@ impl WebClient
 					if var == "firstCP"
 					{
 						s.settings.firstCP = value.as_str().unwrap().to_string();
+					}
+					if var == "maxItemCellSize"
+					{
+						s.settings.maxItemCellSize = value.as_u8().unwrap();
 					}
 				}
 				Server::reloadState();

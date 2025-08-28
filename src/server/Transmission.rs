@@ -1,13 +1,10 @@
-use crate::server::State::Account;
-
 #[derive(Debug, Clone)]
 pub enum ServerMessage
 {
-	Register(String),
 	Chat(String),
 	Disconnected,
 	GetGameInfo(u8),
-	GetPlayerInfo(u8),
+	GetPlayerInfo(u8, u8),
 	SetPlayerInfo(u8, Vec<u8>),
 	SetGameInfo(u8, Vec<u8>)
 }
@@ -19,7 +16,7 @@ pub enum ClientMessage
 	Disconnected(u8),
 	Chat(String),
 	GameInfo(u8, Vec<u8>),
-	PlayerInfo(u8, Account)
+	PlayerInfo(u8, u8, Vec<u8>)
 }
 
 impl ClientMessage
@@ -50,16 +47,11 @@ impl ClientMessage
 					&[4u8], &[kind], raw.as_slice()
 				].concat()
 			},
-			Self::PlayerInfo(id, info) =>
+			Self::PlayerInfo(id, kind, raw) =>
 			{
 				[
-					&[5u8], &[id],
-					&[info.color.0],
-					&[info.color.1],
-					&[info.color.2],
-					&info.hp.to_be_bytes() as &[u8],
-					info.name.as_bytes(), &[0u8],
-					info.class.as_bytes(), &[0u8],
+					&[5u8], &[id], &[kind],
+					raw.as_slice()
 				].concat()
 			}
 		}

@@ -198,6 +198,7 @@ impl Network
 		let mut timer = Instant::now();
 		'main: loop
 		{
+			let controller = Instant::now();
 			let data = net.receiveUDP();
 			if data.is_none() { break 'main; }
 			let data = data.unwrap();
@@ -222,6 +223,11 @@ impl Network
 				let _ = udp.send(&net.mainState.raw(net.id));
 				timer = Instant::now();
 			}
+
+			std::thread::sleep(Duration::from_secs_f32(
+				((1.0 / (net.tickRate * 2) as f32) - controller.elapsed().as_secs_f32())
+				.max(0.0)
+			));
 		}
 	}
 
@@ -316,40 +322,37 @@ impl Network
 				}
 				5 =>
 				{
-					let name = {
-						let mut len = 0;
-						while buffer[current + 7 + len] != 0 { len += 1; }
-						String::from_utf8_lossy(
-							&buffer[current + 7..current + 7 + len]
-						).to_string()
-					};
-					let class = {
-						let mut len = 0;
-						while buffer[current + 8 + name.len() + len] != 0 { len += 1; }
-						String::from_utf8_lossy(
-							&buffer[
-								current + 8 + name.len()..
-								current + 8 + name.len() + len
-							]
-						).to_string()
-					};
-					out.push(ClientMessage::PlayerInfo(
-						buffer[current + 1], Account
+					let id = buffer[current + 1];
+					let kind = buffer[current + 2];
+					let raw = match kind
+					{
+						0 =>
 						{
-							name: name.clone(),
-							class: class.clone(),
-							color: (
-								buffer[current + 2],
-								buffer[current + 3],
-								buffer[current + 4]
-							),
-							hp: u16::from_be_bytes([
-								buffer[current + 5],
-								buffer[current + 6]
-							])
+							let mut len = 0;
+							while buffer[current + 3 + len] != 0 { len += 1; }
+							let v = buffer[current + 3..current + 3 + len].to_vec();
+							current += 4 + len; v
 						}
-					));
-					current += 9 + name.len() + class.len();
+						1 =>
+						{
+							let mut len = 0;
+							while buffer[current + 3 + len] != 0 { len += 1; }
+							let v = buffer[current + 3..current + 3 + len].to_vec();
+							current += 4 + len; v
+						}
+						2 =>
+						{
+							let v = buffer[current + 3..current + 6].to_vec();
+							current += 6; v
+						}
+						3 =>
+						{
+							let v = buffer[current + 3..current + 5].to_vec();
+							current += 5; v
+						}
+						x => { println!("Unknown info: {x}"); vec![] }
+					};
+					out.push(ClientMessage::PlayerInfo(id, kind, raw));
 				}
 				x =>
 				{

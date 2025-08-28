@@ -10,7 +10,6 @@ pub struct Window
 	context: glfw::Glfw,
 	pub window: Option<glfw::PWindow>,
 	events: Option<glfw::GlfwReceiver<(f64, glfw::WindowEvent)>>,
-	_palette: HashMap<String, glam::Vec4>,
 	deltaTime: f32,
 	lastTime: std::time::Instant,
 	pub prog: Programmable,
@@ -36,7 +35,6 @@ impl Window
 			context: glfw::init(glfw::fail_on_errors!()).unwrap(),
 			window: None,
 			events: None,
-			_palette: HashMap::new(),
 			deltaTime: 0.0,
 			lastTime: std::time::Instant::now(),
 			prog: Programmable::new(),
@@ -273,13 +271,6 @@ impl Window
 		Window::getInstance().window.as_ref().unwrap().get_size()
 	}
 
-	pub fn _getColor(name: String) -> glam::Vec4
-	{
-		*Window::getInstance()._palette.get(&name).unwrap_or(
-			&glam::Vec4::ZERO
-		)
-	}
-
 	pub fn isOpen() -> bool
 	{
 		!Window::getInstance().window.as_ref().unwrap().should_close()
@@ -494,6 +485,15 @@ impl Window
 		} else { "./res/system/server.exe" };
 		i.server = Some(
 			std::process::Command::new(path).arg("silent").spawn().unwrap()
+		);
+	}
+
+	pub fn setMousePos(pos: glam::Vec2)
+	{
+		let w = Window::getInstance().window.as_mut().unwrap();
+		w.set_cursor_pos(
+			pos.x as f64,
+			pos.y as f64
 		);
 	}
 }

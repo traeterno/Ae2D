@@ -76,7 +76,7 @@ impl Server
 			{
 				match UdpSocket::bind("0.0.0.0:0")
 				{
-					Ok(s) => { let _ = s.set_nonblocking(true); s }
+					Ok(s) => { let _ = s.set_nonblocking(true); s},
 					Err(x) => panic!("Сокет UDP не создан: {x:?}")
 				}
 			})(),
@@ -139,6 +139,7 @@ impl Server
 
 	pub fn update(&mut self)
 	{
+		let controller = Instant::now();
 		for (id, c) in &mut self.clients
 		{
 			if c.tcp.is_none() { continue; }
@@ -148,37 +149,43 @@ impl Server
 			}
 		}
 
-		'udp: loop
-		{
-			let buffer = &mut [0u8; 16];
-			match self.udp.recv_from(buffer)
-			{
-				Ok((size, addr)) =>
-				{
-					if size != 9 { continue; }
-					let id = buffer[0] & 0b00_00_01_11;
-					let c = self.clients.get_mut(&id).unwrap();
-
-					if c.udp.is_none() { c.udp = Some(addr); }
-					c.state = [buffer[0],
-						buffer[1], buffer[2],
-						buffer[3], buffer[4],
-						buffer[5], buffer[6],
-						buffer[7], buffer[8]
-					];
-				},
-				Err(_) => { break 'udp; }
-			}
-		}
-		
 		self.handleRequests();
 		self.broadcastTCP();
 
-		if self.sendTimer.elapsed() > self.state.settings.sendTime
+		if self.started
 		{
-			self.broadcastState();
-			self.sendTimer = Instant::now();
+			'udp: loop
+			{
+				let buffer = &mut [0u8; 16];
+				match self.udp.recv_from(buffer)
+				{
+					Ok((size, addr)) =>
+					{
+						if size != 9 { continue; }
+						let id = buffer[0] & 0b00_00_01_11;
+						let c = self.clients.get_mut(&id).unwrap();
+
+						if c.udp.is_none() { c.udp = Some(addr); }
+						c.state = [buffer[0],
+							buffer[1], buffer[2],
+							buffer[3], buffer[4],
+							buffer[5], buffer[6],
+							buffer[7], buffer[8]
+						];
+					},
+					Err(_) => { break 'udp; }
+				}
+			}
+			if self.sendTimer.elapsed() > self.state.settings.sendTime
+			{
+				self.broadcastState();
+				self.sendTimer = Instant::now();
+			}
 		}
+
+		std::thread::sleep(Duration::from_secs_f32(
+			(1.0 / 1000.0 - controller.elapsed().as_secs_f32()).max(0.0)
+		));
 	}
 
 	fn handleRequests(&mut self)
@@ -187,19 +194,6 @@ impl Server
 		{
 			match msg
 			{
-				ServerMessage::Register(name) =>
-				{
-					let c = self.clients.get_mut(&id).unwrap();
-					c.info.name = name.clone();
-
-					self.broadcast.push(ClientMessage::Login(
-						id, name.clone()
-					));
-
-					self.checkReady();
-
-					println!("P{id}: Добро пожаловать, {name}!");
-				}
 				ServerMessage::Disconnected =>
 				{
 					println!("P{id} вышел из игры.");
@@ -232,30 +226,12 @@ impl Server
 						0 => // System
 						{
 							out = [
-								&[self.state.getPlayersCount()] as &[u8],
-								&[self.getActivePlayersCount()] as &[u8],
-								&[self.state.settings.tickRate] as &[u8],
+								&[self.state.getPlayersCount()],
+								&[self.state.settings.tickRate],
+								&[self.state.settings.maxItemCellSize],
 								&self.udp.local_addr().unwrap().port().to_be_bytes() as &[u8],
-								&[0u8] as &[u8]
+								&[0u8]
 							].concat();
-						}
-						1 => // PlayersList
-						{
-							let mut buf = String::new();
-							for (&id, c) in &self.clients
-							{
-								if c.tcp.is_none() { continue; }
-								buf = buf +
-									&id.to_string() + "," +
-									&c.info.name + "," +
-									&c.info.class + "," +
-									&c.info.color.0.to_string() + "," +
-									&c.info.color.1.to_string() + "," +
-									&c.info.color.2.to_string() + "/";
-							}
-
-							// 1,Aeterno,unknown/
-							out = [buf.as_bytes(), &[0u8]].concat();
 						}
 						x =>
 						{
@@ -266,15 +242,27 @@ impl Server
 						ClientMessage::GameInfo(kind, out)
 					);
 				}
-				ServerMessage::GetPlayerInfo(target) =>
+				ServerMessage::GetPlayerInfo(target, kind) =>
 				{
-					println!("P{id} запросил информацию о P{target}.");
+					println!("P{id} запросил информацию #{kind} о P{target}.");
 					let acc = self.clients.get(&target).unwrap().info.clone();
+					let raw = match kind
+					{
+						0 => { [acc.name.as_bytes().to_vec(), vec![0u8]].concat() }
+						1 => { [acc.class.as_bytes().to_vec(), vec![0u8]].concat() }
+						2 => { vec![acc.color.0, acc.color.1, acc.color.2] }
+						3 => { acc.hp.to_be_bytes().to_vec() }
+						x =>
+						{
+							println!("Неизвестный тип информации: {x}");
+							vec![]
+						}
+					};
 					self.clients.get_mut(&id).unwrap().sendTCP(
-						ClientMessage::PlayerInfo(target, acc)
+						ClientMessage::PlayerInfo(target, kind, raw)
 					);
 				}
-				ServerMessage::SetPlayerInfo(kind, raw) =>
+				ServerMessage::SetPlayerInfo(kind, mut raw) =>
 				{
 					let acc = self.clients.get_mut(&id).unwrap();
 					let mut check = false;
@@ -284,7 +272,15 @@ impl Server
 						{
 							let name = String::from_utf8_lossy(&raw).to_string();
 							println!("P{id} изменил своё имя на \"{name}\".");
+							if acc.info.name == "noname"
+							{
+								acc.sendTCP(
+									ClientMessage::Login(id, name.clone())
+								);
+							}
 							acc.info.name = name;
+							raw.push(0);
+							check = true;
 						}
 						1 =>
 						{
@@ -293,6 +289,8 @@ impl Server
 								String::from_utf8_lossy(&raw).to_string()
 							);
 							println!("P{id} изменил свой класс на \"{class}\".");
+							raw = class.as_bytes().to_vec();
+							raw.push(0);
 							acc.info.class = class;
 							check = true;
 						}
@@ -315,8 +313,7 @@ impl Server
 						}
 					}
 					self.broadcast.push(ClientMessage::PlayerInfo(
-						id,
-						acc.info.clone()
+						id, kind, raw
 					));
 					if check
 					{
@@ -330,7 +327,7 @@ impl Server
 						0 =>
 						{
 							self.started = raw[0] == 1;
-							self.broadcast.push(ClientMessage::GameInfo(2, vec![3u8, 0u8]));
+							self.broadcast.push(ClientMessage::GameInfo(1, vec![3u8, 0u8]));
 							println!("P{id} начал игру.");
 						}
 						1 =>
@@ -338,7 +335,7 @@ impl Server
 							self.state.save(
 								String::from_utf8_lossy(&raw).to_string()
 							);
-							self.broadcast.push(ClientMessage::GameInfo(3, vec![0u8]));
+							self.broadcast.push(ClientMessage::GameInfo(2, vec![0u8]));
 							self.broadcast.push(ClientMessage::Chat(
 								String::from("Игра сохранена.")
 							));
@@ -476,54 +473,43 @@ impl Server
 
 	pub fn checkReady(&mut self)
 	{
-		if self.getActivePlayersCount() == 0
+		let mut ready = true;
+		let mut count = 0u8;
+		for (_, c) in &self.clients
 		{
-			println!("Все игроки вышли.");
+			if c.tcp.is_none() { continue; }
+			count += 1;
+			if c.info.name == "noname" || c.info.class == "unknown"
+			{
+				ready = false;
+				break;
+			}
+		}
+
+		if count == 0
+		{
+			if self.silent { std::process::exit(0); }
 			if self.started
 			{
-				println!("Возвращаемся в меню...");
-				self.started = false;
-			}
-			if self.silent
-			{
-				println!("Silent-режим запущен. Останавливаем сервер.");
-				std::process::exit(0);
+				println!("Все игроки вышли. Возвращаемся в меню...");
+				self.setStarted(false);
 			}
 			return;
 		}
 
-		let mut ready = true;
-		for (_, c) in &self.clients
-		{
-			if c.tcp.is_none() { continue; }
-			if c.info.class == "unknown" { ready = false; break; }
-		}
-
-		for i in 1..=10
+		for i in 1..=self.state.getPlayersCount()
 		{
 			let c = self.clients.get_mut(&i).unwrap();
-			if c.tcp.is_some()
+			if c.tcp.is_none() { continue; }
+			c.sendTCP(ClientMessage::GameInfo(1, vec![
+				if ready { 2u8 } else { 1u8 }, 0u8
+			]));
+			if ready
 			{
-				c.sendTCP(ClientMessage::GameInfo(2, vec![
-					if ready { 2u8 } else { 1u8 }, 0u8
-				]));
-				if ready
-				{
-					println!("P{i} может запустить игру.");
-				}
-				return;
+				println!("P{i} может начать игру.");
 			}
+			return;
 		}
-	}
-
-	pub fn getActivePlayersCount(&self) -> u8
-	{
-		let mut count = 0;
-		for (_, c) in &self.clients
-		{
-			if c.tcp.is_some() { count += 1; }
-		}
-		count
 	}
 
 	pub fn setSilent(&mut self, silent: bool)
