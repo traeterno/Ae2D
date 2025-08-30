@@ -6,6 +6,17 @@ use crate::{ae2d::{Entity::Entity, Network::{Network, PlayerState}, Programmable
 
 use super::{Sprite::Sprite, Text::Text, Window::Window};
 
+fn getScript(id: String) -> &'static mlua::Lua
+{
+	let mut id = id.split("_");
+	match id.nth(0).unwrap()
+	{
+		"ui" => Window::getUI().getObject(id.nth(0).unwrap().to_string()).getScript(),
+		"ent" => Window::getWorld().getEntity(id.nth(0).unwrap().to_string()).getScript(),
+		x => panic!("Script Lua: {x} not defined")
+	}
+}
+
 fn getSprite(id: String) -> &'static mut Sprite
 {
 	let mut id = id.split("_");
@@ -606,6 +617,12 @@ pub fn network(s: &Lua)
 						3 => t.raw_set(
 							"hp", u16::from_be_bytes([raw[0], raw[1]])
 						).unwrap(),
+						4 => t.raw_set(
+							"inventory", String::from_utf8_lossy(&raw).to_string()
+						).unwrap(),
+						5 => t.raw_set(
+							"usedItem", String::from_utf8_lossy(&raw).to_string()
+						).unwrap(),
 						x => println!("Invalid PlayerInfo: {x}")
 					}
 					found = true;
@@ -685,7 +702,15 @@ pub fn network(s: &Lua)
 						&[0u8]
 					].concat()
 				}
-				else { vec![] }
+				else if let Some(item) = x.1
+					.raw_get::<mlua::Value>("usedSlot").unwrap().as_u32()
+				{
+					vec![
+						5u8, 5u8,
+						item as u8, 0u8
+					]
+				}
+				else { vec![0u8] }
 			}
 			6 =>
 			{
@@ -793,7 +818,6 @@ pub fn network(s: &Lua)
 		let _ = p.raw_set("clrR", a.color.0);
 		let _ = p.raw_set("clrG", a.color.1);
 		let _ = p.raw_set("clrB", a.color.2);
-		let _ = p.raw_set("hp", a.hp);
 		Ok(p)
 	}).unwrap());
 
@@ -810,7 +834,6 @@ pub fn network(s: &Lua)
 				if k == "clrR" { a.color.0 = p.as_u32().unwrap() as u8; }
 				if k == "clrG" { a.color.1 = p.as_u32().unwrap() as u8; }
 				if k == "clrB" { a.color.2 = p.as_u32().unwrap() as u8; }
-				if k == "hp" { a.hp = p.as_u32().unwrap() as u16; }
 			}
 		}
 		Ok(())
@@ -953,9 +976,14 @@ pub fn window(script: &Lua)
 	}).unwrap());
 	
 	let _ = table.raw_set("execute",
-	script.create_function(|s, code: String|
+	script.create_function(|_, code: (String, String)|
 	{
-		let _ = s.load(code).exec();
+		if let Err(x) = getScript(code.0.clone())
+			.load(code.1)
+			.exec()
+		{
+			println!("{}: {x}", code.0);
+		}
 		Ok(())
 	}).unwrap());
 
@@ -1034,6 +1062,13 @@ pub fn world(script: &Lua)
 	script.create_function(|_, path: String|
 	{
 		Window::getWorld().load(path);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("reset",
+	script.create_function(|_, _: ()|
+	{
+		*Window::getWorld() = World::new();
 		Ok(())
 	}).unwrap());
 

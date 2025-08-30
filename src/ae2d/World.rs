@@ -11,7 +11,8 @@ pub struct World
 	ents: Vec<Entity>,
 	prog: Programmable,
 	triggers: HashMap<String, (String, glam::Vec4)>,
-	layers: Vec<(Vec<String>, Vec<String>)>
+	layers: Vec<(Vec<String>, Vec<String>)>,
+	init: bool
 }
 
 impl World
@@ -25,7 +26,8 @@ impl World
 			ents: vec![],
 			prog: Programmable::new(),
 			triggers: HashMap::new(),
-			layers: vec![]
+			layers: vec![],
+			init: true
 		}
 	}
 
@@ -50,14 +52,20 @@ impl World
 			Err(x) => { println!("Не удалось загрузить мир: {x}"); return; }
 		}
 
+		self.init = true;
+
 		bind::window(&self.script);
 		bind::network(&self.script);
 		bind::world(&self.script);
-		bind::execFunc(&self.script, "Init"); 
 	}
 
 	pub fn update(&mut self)
 	{
+		if self.init
+		{
+			bind::execFunc(&self.script, "Init");
+			self.init = false;
+		}
 		for l in &mut self.layers { *l = (vec![], vec![]); }
 		bind::execFunc(&self.script, "Update");
 		for i in 0..self.ents.len()

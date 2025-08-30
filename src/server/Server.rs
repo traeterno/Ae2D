@@ -252,6 +252,10 @@ impl Server
 						1 => { [acc.class.as_bytes().to_vec(), vec![0u8]].concat() }
 						2 => { vec![acc.color.0, acc.color.1, acc.color.2] }
 						3 => { acc.hp.to_be_bytes().to_vec() }
+						4 =>
+						{
+							[acc.inv().as_bytes().to_vec(), vec![0u8]].concat()
+						}
 						x =>
 						{
 							println!("Неизвестный тип информации: {x}");
@@ -262,63 +266,9 @@ impl Server
 						ClientMessage::PlayerInfo(target, kind, raw)
 					);
 				}
-				ServerMessage::SetPlayerInfo(kind, mut raw) =>
+				ServerMessage::SetPlayerInfo(kind, raw) =>
 				{
-					let acc = self.clients.get_mut(&id).unwrap();
-					let mut check = false;
-					match kind
-					{
-						0 =>
-						{
-							let name = String::from_utf8_lossy(&raw).to_string();
-							println!("P{id} изменил своё имя на \"{name}\".");
-							if acc.info.name == "noname"
-							{
-								acc.sendTCP(
-									ClientMessage::Login(id, name.clone())
-								);
-							}
-							acc.info.name = name;
-							raw.push(0);
-							check = true;
-						}
-						1 =>
-						{
-							let class = Self::updateClass(
-								acc.info.class.clone(),
-								String::from_utf8_lossy(&raw).to_string()
-							);
-							println!("P{id} изменил свой класс на \"{class}\".");
-							raw = class.as_bytes().to_vec();
-							raw.push(0);
-							acc.info.class = class;
-							check = true;
-						}
-						2 =>
-						{
-							let r = raw[0];
-							let g = raw[1];
-							let b = raw[2];
-							println!("P{id} изменил свой цвет на ({r}, {g}, {b}).");
-							acc.info.color = (r, g, b);
-						}
-						3 =>
-						{
-							let hp = u16::from_be_bytes([raw[0], raw[1]]);
-							acc.info.hp = hp;
-						}
-						x =>
-						{
-							println!("P{id} попытался изменить параметр #{x}.");
-						}
-					}
-					self.broadcast.push(ClientMessage::PlayerInfo(
-						id, kind, raw
-					));
-					if check
-					{
-						self.checkReady();
-					}
+					self.SetPlayerInfo(id, kind, raw);
 				}
 				ServerMessage::SetGameInfo(kind, raw) =>
 				{
@@ -515,5 +465,85 @@ impl Server
 	pub fn setSilent(&mut self, silent: bool)
 	{
 		self.silent = silent;
+	}
+
+	pub fn SetPlayerInfo(&mut self, id: u8, kind: u8, mut raw: Vec<u8>)
+	{
+		let acc = self.clients.get_mut(&id).unwrap();
+		let mut check = false;
+		match kind
+		{
+			0 =>
+			{
+				let name = String::from_utf8_lossy(&raw).to_string();
+				println!("P{id} изменил своё имя на \"{name}\".");
+				if acc.info.name == "noname"
+				{
+					acc.sendTCP(
+						ClientMessage::Login(id, name.clone())
+					);
+				}
+				acc.info.name = name;
+				raw.push(0);
+				check = true;
+			}
+			1 =>
+			{
+				let class = Self::updateClass(
+					acc.info.class.clone(),
+					String::from_utf8_lossy(&raw).to_string()
+				);
+				println!("P{id} изменил свой класс на \"{class}\".");
+				raw = class.as_bytes().to_vec();
+				raw.push(0);
+				acc.info.class = class;
+				check = true;
+			}
+			2 =>
+			{
+				let r = raw[0];
+				let g = raw[1];
+				let b = raw[2];
+				println!("P{id} изменил свой цвет на ({r}, {g}, {b}).");
+				acc.info.color = (r, g, b);
+			}
+			3 =>
+			{
+				let hp = u16::from_be_bytes([raw[0], raw[1]]);
+				acc.info.hp = hp;
+			}
+			4 =>
+			{
+				println!("P{id} попытался изменить свой инвентарь?");
+			}
+			5 =>
+			{
+				let (res, item) = acc.info.useItem(raw[0]);
+				if res
+				{
+					println!("P{id} использовал предмет '{item}'.");
+				}
+				else
+				{
+					println!("P{id} попытался достать предмет '{item}' из воздуха.");
+				}
+				acc.sendTCP(ClientMessage::PlayerInfo(
+					id, 4, [acc.info.inv().as_bytes(), &[0u8]].concat()
+				));
+				raw = item.as_bytes().to_vec();
+				raw.push(0);
+			}
+			x =>
+			{
+				println!("P{id} попытался изменить параметр #{x}.");
+			}
+		}
+		self.broadcast.push(ClientMessage::PlayerInfo(
+			id, kind, raw
+		));
+		if check
+		{
+			self.checkReady();
+		}
 	}
 }

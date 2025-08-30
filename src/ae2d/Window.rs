@@ -244,6 +244,7 @@ impl Window
 			}
 		}
 
+		i.ui.updateReload();
 		i.world.update();
 		i.ui.update();
 	}

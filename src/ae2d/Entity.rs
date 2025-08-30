@@ -53,6 +53,11 @@ impl Entity
 		&mut self.sprite
 	}
 
+	pub fn getScript(&self) -> &mlua::Lua
+	{
+		&self.script
+	}
+
 	pub fn init(&self, data: json::JsonValue)
 	{
 		let t = self.script.create_table().unwrap();

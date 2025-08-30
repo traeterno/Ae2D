@@ -143,7 +143,7 @@ impl Network
 						c.raw_get("g").unwrap(),
 						c.raw_get("b").unwrap()
 					),
-					hp: 100
+					..Default::default()
 				});
 			}
 		}
@@ -326,14 +326,7 @@ impl Network
 					let kind = buffer[current + 2];
 					let raw = match kind
 					{
-						0 =>
-						{
-							let mut len = 0;
-							while buffer[current + 3 + len] != 0 { len += 1; }
-							let v = buffer[current + 3..current + 3 + len].to_vec();
-							current += 4 + len; v
-						}
-						1 =>
+						0 | 1 | 4 | 5 =>
 						{
 							let mut len = 0;
 							while buffer[current + 3 + len] != 0 { len += 1; }

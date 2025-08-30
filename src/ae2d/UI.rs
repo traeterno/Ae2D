@@ -136,6 +136,8 @@ impl Object
 	{
 		&mut self.text
 	}
+
+	pub fn getScript(&self) -> &mlua::Lua { &self.script }
 }
 
 pub struct UI
@@ -199,7 +201,7 @@ impl UI
 					Ok(_) => {},
 					Err(x) =>
 					{
-						println!("Object: {name}\n{x}\n");
+						println!("Object Init: {name}\n{x}\n");
 					}
 				}
 			}
@@ -217,11 +219,6 @@ impl UI
 
 	pub fn update(&mut self)
 	{
-		if !self.reload.is_empty()
-		{
-			self.load(&self.reload.clone());
-			self.reload.clear();
-		}
 		for obj in &self.objects
 		{
 			let name = &obj.name;
@@ -233,7 +230,7 @@ impl UI
 					Ok(_) => {},
 					Err(x) =>
 					{
-						println!("Object: {name}\n{x}\n");
+						println!("Object Update: {name}\n{x}\n");
 					}
 				}
 			}
@@ -243,6 +240,15 @@ impl UI
 	pub fn requestLoad(&mut self, path: String)
 	{
 		self.reload = path;
+	}
+
+	pub fn updateReload(&mut self)
+	{
+		if !self.reload.is_empty()
+		{
+			self.load(&self.reload.clone());
+			self.reload.clear();
+		}
 	}
 
 	pub fn resize(&mut self)
@@ -274,7 +280,7 @@ impl Drawable for UI
 					Ok(_) => {},
 					Err(x) =>
 					{
-						println!("Object: {name}\n{x}\n");
+						println!("Object Draw: {name}\n{x}\n");
 					}
 				}
 			}

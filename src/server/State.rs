@@ -8,7 +8,8 @@ pub struct Account
 	pub name: String,
 	pub class: String,
 	pub color: (u8, u8, u8),
-	pub hp: u16
+	pub hp: u16,
+	pub inventory: [(String, u8); 8]
 }
 
 impl Default for Account
@@ -20,8 +21,45 @@ impl Default for Account
 			name: String::from("noname"),
 			class: String::from("unknown"),
 			color: (255u8, 255u8, 255u8),
-			hp: 0
+			hp: 0,
+			inventory: [const { (String::new(), 0) }; 8]
 		}
+	}
+}
+
+impl Account
+{
+	pub fn inv(&self) -> String
+	{
+		let mut out = String::new();
+		for item in &self.inventory
+		{
+			out += &(item.0.clone() + "." + &item.1.to_string() + "/");
+		}
+		out
+	}
+
+	pub fn addItem(&mut self, item: String)
+	{
+		for entry in &mut self.inventory
+		{
+			if entry.0 == item && entry.1 < u8::MAX { entry.1 += 1; return; }
+		}
+		for entry in &mut self.inventory
+		{
+			if entry.0.is_empty() { *entry = (item, 1); return; }
+		}
+	}
+
+	pub fn useItem(&mut self, slot: u8) -> (bool, String)
+	{
+		if slot != slot.clamp(1, 8) { return (false, format!("slot{slot}")); }
+		let s = &mut self.inventory[(slot - 1) as usize];
+		if s.0.is_empty() { return (false, String::from("empty")); }
+		let id = s.0.clone();
+		s.1 -= 1;
+		if s.1 == 0 { *s = (String::new(), 0); }
+		(true, id)
 	}
 }
 
@@ -81,6 +119,7 @@ impl State
 					let mut name = String::new();
 					let mut class = String::new();
 					let mut color = (255, 255, 255);
+					let mut inv = vec![];
 					for arg in player.entries()
 					{
 						if arg.0 == "name"
@@ -100,11 +139,38 @@ impl State
 								if c.0 == "b" { color.2 = c.1.as_u8().unwrap(); }
 							}
 						}
+						if arg.0 == "inventory"
+						{
+							for entry in arg.1.members()
+							{
+								let mut id = String::new();
+								let mut count = 0u8;
+								for item in entry.entries()
+								{
+									if item.0 == "id"
+									{
+										id = item.1.as_str().unwrap().to_string();
+									}
+									if item.0 == "count"
+									{
+										count = item.1.as_u8().unwrap();
+									}
+								}
+								inv.push((id, count));
+							}
+						}
+					}
+
+					let mut inventory = [const { (String::new(), 0)}; 8];
+					for i in 0..8
+					{
+						if inv.len() <= i { break; }
+						inventory[i] = inv[i].clone();
 					}
 
 					state.accounts.insert(
 						ip.parse().unwrap(),
-						Account { name, class, color, hp: 0 }
+						Account { name, class, color, hp: 0, inventory }
 					);
 				}
 			}
@@ -189,6 +255,14 @@ impl State
 		{
 			if c.tcp.is_none() { continue; }
 			let ip = c.tcp.as_ref().unwrap().peer_addr().unwrap().ip();
+			let mut inv = json::array![];
+			for (id, count) in &c.info.inventory
+			{
+				let _ = inv.push(json::object!{
+					id: id.clone(),
+					count: *count
+				});
+			}
 			let _ = players.insert(&ip.to_string(), json::object!{
 				name: c.info.name.clone(),
 				class: c.info.class.clone(),
@@ -196,7 +270,8 @@ impl State
 					r: c.info.color.0,
 					g: c.info.color.1,
 					b: c.info.color.2
-				}
+				},
+				inventory: inv
 			});
 		}
 
