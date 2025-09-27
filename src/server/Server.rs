@@ -16,7 +16,8 @@ pub struct Server
 	udp: UdpSocket,
 	sendTimer: Instant,
 	started: bool,
-	silent: bool
+	silent: bool,
+	web: WebClient
 }
 
 impl Server
@@ -34,42 +35,15 @@ impl Server
 
 	pub fn init() -> Self
 	{
-		let state = State::init();
-		
-		let _ = std::thread::Builder::new().name(String::from("WebListener")).spawn(||
-		{
-			match TcpListener::bind("0.0.0.0:8080")
-			{
-				Ok(wl) =>
-				{
-					println!("Центр Мира запущен.");
-					for client in wl.incoming()
-					{
-						match client
-						{
-							Ok(tcp) => WebClient::handle(tcp),
-							Err(_) => break
-						}
-					}
-				}
-				Err(x) =>
-				{
-					panic!("Не удалось запустить Центр Мира: {x:?}");
-				}
-			}
-		});
-
-		println!("Сервер запущен. Ждём игроков...");
-
 		Self
 		{
 			clients: (||
 			{
 				let mut c = HashMap::new();
-				for i in 1..=state.getPlayersCount() { c.insert(i, Client::default()); }
+				for i in 1..=5 { c.insert(i, Client::default()); }
 				c
 			})(),
-			state,
+			state: State::init(),
 			requests: vec![],
 			broadcast: vec![],
 			udp: (||
@@ -82,7 +56,8 @@ impl Server
 			})(),
 			sendTimer: Instant::now(),
 			started: false,
-			silent: false
+			silent: false,
+			web: WebClient::init()
 		}
 	}
 
@@ -132,6 +107,7 @@ impl Server
 					i.clients.insert(id, Client::connect(tcp, info.clone()));
 					i.broadcast.push(ClientMessage::Login(id, info.name));
 					i.checkReady();
+					i.updatePlayers();
 				}
 			}
 		});
@@ -199,23 +175,10 @@ impl Server
 					println!("P{id} вышел из игры.");
 					self.broadcast.push(ClientMessage::Disconnected(id));
 				}
-				ServerMessage::Chat(mut msg) =>
+				ServerMessage::Chat(msg) =>
 				{
 					let name = self.clients.get(&id).unwrap().info.name.clone();
-					let f = msg.chars().nth(0).unwrap();
-					if f == '!'
-					{
-						msg.remove(0);
-						println!("{msg}");
-						self.broadcast.push(ClientMessage::Chat(msg.clone()));
-						self.state.chatHistory.push((name, msg));
-					}
-					else
-					{
-						println!("P{id} ({name}): {msg}");
-						self.broadcast.push(ClientMessage::Chat(name.clone() + ": " + &msg));
-						self.state.chatHistory.push((name, msg));
-					}
+					self.newMessage(name, msg);
 				}
 				ServerMessage::GetGameInfo(kind) =>
 				{
@@ -226,10 +189,10 @@ impl Server
 						0 => // System
 						{
 							out = [
-								&[self.state.getPlayersCount()],
 								&[self.state.settings.tickRate],
 								&[self.state.settings.maxItemCellSize],
 								&self.udp.local_addr().unwrap().port().to_be_bytes() as &[u8],
+								self.state.save.checkpoint.as_bytes(),
 								&[0u8]
 							].concat();
 						}
@@ -268,7 +231,7 @@ impl Server
 				}
 				ServerMessage::SetPlayerInfo(kind, raw) =>
 				{
-					self.SetPlayerInfo(id, kind, raw);
+					self.setPlayerInfo(id, kind, raw);
 				}
 				ServerMessage::SetGameInfo(kind, raw) =>
 				{
@@ -322,19 +285,23 @@ impl Server
 			}
 		}
 		self.broadcast.clear();
-		if check { self.checkReady(); }
+		if check
+		{
+			self.checkReady();
+			self.updatePlayers();
+		}
 	}
 
 	fn broadcastState(&mut self)
 	{
-		for i in 1..=self.state.getPlayersCount()
+		for i in 1..=5
 		{
 			let addr = self.clients.get(&i).unwrap().udp;
 			if addr.is_none() { continue; }
 			let addr = addr.unwrap();
 
 			let mut buffer: Vec<u8> = vec![];
-			for id in 1..=self.state.getPlayersCount()
+			for id in 1..=5
 			{
 				if self.clients.get(&id).unwrap().udp.is_none() || id == i { continue; }
 				buffer.append(&mut self.clients.get(&id).unwrap().state.to_vec());
@@ -369,17 +336,11 @@ impl Server
 	pub fn updateClass(previous: String, new: String) -> String
 	{
 		if previous == new { return String::from("unknown"); }
-		let mut count = 0;
 		for (_, c) in &Self::getInstance().clients
 		{
-			if c.info.class == new { count += 1; }
+			if c.info.class == new { return previous; }
 		}
-		match count
-		{
-			0 => new,
-			1 => if Self::getState().settings.extendPlayers { new } else { previous },
-			_ => previous
-		}
+		new
 	}
 
 	pub fn _split(src: String) -> Vec<String>
@@ -412,15 +373,6 @@ impl Server
 	pub fn getState() -> &'static mut State { &mut Server::getInstance().state }
 	pub fn getPlayers() -> &'static HashMap<u8, Client> { &Server::getInstance().clients }
 
-	pub fn reloadState()
-	{
-		Self::getInstance().clients.clear();
-		for i in 1..=Self::getState().getPlayersCount()
-		{
-			Self::getInstance().clients.insert(i, Client::default());
-		}
-	}
-
 	pub fn checkReady(&mut self)
 	{
 		let mut ready = true;
@@ -447,7 +399,7 @@ impl Server
 			return;
 		}
 
-		for i in 1..=self.state.getPlayersCount()
+		for i in 1..=5
 		{
 			let c = self.clients.get_mut(&i).unwrap();
 			if c.tcp.is_none() { continue; }
@@ -467,7 +419,7 @@ impl Server
 		self.silent = silent;
 	}
 
-	pub fn SetPlayerInfo(&mut self, id: u8, kind: u8, mut raw: Vec<u8>)
+	pub fn setPlayerInfo(&mut self, id: u8, kind: u8, mut raw: Vec<u8>)
 	{
 		let acc = self.clients.get_mut(&id).unwrap();
 		let mut check = false;
@@ -541,9 +493,40 @@ impl Server
 		self.broadcast.push(ClientMessage::PlayerInfo(
 			id, kind, raw
 		));
+		self.updatePlayers();
 		if check
 		{
 			self.checkReady();
 		}
+	}
+
+	pub fn newMessage(&mut self, name: String, mut msg: String)
+	{
+		let f = msg.chars().nth(0).unwrap();
+		if f == '!'
+		{
+			msg.remove(0);
+			println!("{msg}");
+			self.broadcast.push(ClientMessage::Chat(msg.clone()));
+			self.state.chatHistory.push((name, msg));
+		}
+		else
+		{
+			println!("{name}: {msg}");
+			self.broadcast.push(ClientMessage::Chat(name.clone() + ": " + &msg));
+			self.state.chatHistory.push((name, msg));
+		}
+		let msg = self.state.jsonChatHistory(
+			self.state.chatHistory.len() - 1
+		);
+		self.web.send("chatMessages", msg);
+	}
+
+	pub fn getWC() -> &'static mut WebClient { &mut Self::getInstance().web }
+
+	pub fn updatePlayers(&mut self)
+	{
+		let players = self.state.jsonPlayers();
+		self.web.send("players", players);
 	}
 }

@@ -3,9 +3,6 @@ use crate::ae2d::{Camera::Drawable, Transformable::Transformable2D, Window::Wind
 pub struct Rectangle
 {
 	size: glam::Vec2,
-	update: bool,
-	vbo: u32,
-	vao: u32,
 	color: glam::Vec4,
 	ts: Transformable2D
 }
@@ -17,9 +14,6 @@ impl Rectangle
 		Self
 		{
 			size: glam::Vec2::ZERO,
-			update: true,
-			vao: 0,
-			vbo: 0,
 			ts: Transformable2D::new(),
 			color: glam::Vec4::ONE
 		}
@@ -30,77 +24,69 @@ impl Rectangle
 	pub fn setColor(&mut self, clr: glam::Vec4) { self.color = clr; }
 	pub fn getColor(&mut self) -> glam::Vec4 { self.color }
 	
-	pub fn setSize(&mut self, size: glam::Vec2) { self.size = size; self.update = true; }
+	pub fn setSize(&mut self, size: glam::Vec2) { self.size = size; }
 	pub fn getSize(&mut self) -> glam::Vec2 { self.size }
-
-	pub fn reload(&mut self)
-	{
-		if !self.update { return; }
-		self.update = false;
-
-		unsafe
-		{
-			if self.vao == 0
-			{
-				gl::GenVertexArrays(1, &mut self.vao);
-				gl::GenBuffers(1, &mut self.vbo);
-	
-				gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
-				gl::BindVertexArray(self.vao);
-	
-				gl::EnableVertexAttribArray(0);
-				gl::VertexAttribPointer(
-					0, 2, gl::FLOAT, gl::FALSE,
-					(2 * size_of::<f32>()) as _,
-					0 as _
-				)
-			}
-
-			let vertices = [
-				0.0, 0.0,
-				self.size.x, 0.0,
-				self.size.x, self.size.y,
-				0.0, self.size.y
-			];
-
-			gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
-			gl::BufferData(
-				gl::ARRAY_BUFFER,
-				(8 * size_of::<f32>()) as _,
-				vertices.as_ptr() as _,
-				gl::DYNAMIC_DRAW
-			);
-		}
-	}
 }
 
 impl Drawable for Rectangle
 {
 	fn draw(&mut self)
 	{
-		self.reload();
-
 		let shader = Window::getShader(String::from("shape"));
 		shader.activate();
+		shader.setVec2("size", self.size);
 		shader.setMat4("model", self.ts.getMatrix());
 		shader.setVec4("clr", self.color);
-		unsafe
-		{
-			gl::BindVertexArray(self.vao);
-			gl::DrawArrays(gl::QUADS, 0, 4);
-			gl::BindVertexArray(0);
-		}
+		Window::getCamera().drawShape();
 	}
 }
 
-impl Drop for Rectangle
+pub fn line(p1: glam::Vec2, p2: glam::Vec2, c1: glam::Vec4, c2: glam::Vec4)
 {
-	fn drop(&mut self)
+	unsafe
 	{
-		unsafe
-		{
-			gl::DeleteVertexArrays(1, &mut self.vao);
-			gl::DeleteBuffers(1, &mut self.vbo);
-		}
+		let mut vbo = 0;
+		let mut vao = 0;
+		gl::GenBuffers(1, &mut vbo);
+		gl::GenVertexArrays(1, &mut vao);
+		gl::BindVertexArray(vao);
+		gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+		gl::EnableVertexAttribArray(0);	
+		gl::VertexAttribPointer(
+			0, 2, gl::FLOAT,
+			gl::FALSE,
+			(6 * size_of::<f32>()) as _,
+			0 as _
+		);
+
+		gl::EnableVertexAttribArray(1);
+		gl::VertexAttribPointer(
+			1, 4, gl::FLOAT,
+			gl::FALSE,
+			(6 * size_of::<f32>()) as _,
+			(2 * size_of::<f32>()) as _
+		);
+
+		let data = [
+			p1.x, p1.y, c1.x, c1.y, c1.z, c1.w,
+			p2.x, p2.y, c2.x, c2.y, c2.z, c2.w,
+		];
+
+		gl::BufferData(gl::ARRAY_BUFFER,
+			(12 * size_of::<f32>()) as _,
+			data.as_ptr() as _,
+			gl::STATIC_DRAW
+		);
+
+		let s = Window::getShader(String::from("shape"));
+		s.activate();
+		s.setMat4("model", glam::Mat4::IDENTITY);
+		s.setVec2("size", glam::Vec2::ONE);
+		s.setVec4("clr", glam::Vec4::ONE);
+		gl::DrawArrays(gl::LINES, 0, 2);
+		gl::BindVertexArray(0);
+		gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+		gl::DeleteBuffers(1, &mut vbo);
+		gl::DeleteVertexArrays(1, &mut vao);
 	}
 }

@@ -17,7 +17,8 @@ pub struct Camera
 	worldProj: glam::Mat4,
 	shapeVBO: u32,
 	shapeVAO: u32,
-	size: glam::Vec2
+	size: glam::Vec2,
+	useTS: bool
 }
 
 impl Camera
@@ -36,7 +37,8 @@ impl Camera
 			worldProj: glam::Mat4::IDENTITY,
 			shapeVBO: 0,
 			shapeVAO: 0,
-			size: glam::Vec2::ZERO
+			size: glam::Vec2::ZERO,
+			useTS: false
 		}
 	}
 
@@ -110,27 +112,34 @@ impl Camera
 
 			gl::BindVertexArray(self.shapeVAO);
 			gl::BindBuffer(gl::ARRAY_BUFFER, self.shapeVBO);
-			
-			gl::EnableVertexAttribArray(0);
-			
-			gl::VertexAttribPointer(
-				0, 2, gl::FLOAT,
-				gl::FALSE,
-				(2 * size_of::<f32>()) as i32,
-				0 as _
-			);
 
-			let vertices: [f32; 8] = [
-				0.0, 0.0,
-				1.0, 0.0,
-				1.0, 1.0,
-				0.0, 1.0
+			let vertices: [f32; 24] = [
+				0.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+				1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+				1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+				0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
 			];
 
 			gl::BufferData(gl::ARRAY_BUFFER,
-				(8 * size_of::<f32>()) as _,
+				(24 * size_of::<f32>()) as _,
 				vertices.as_ptr() as _,
 				gl::STATIC_DRAW
+			);
+
+			gl::EnableVertexAttribArray(0);	
+			gl::VertexAttribPointer(
+				0, 2, gl::FLOAT,
+				gl::FALSE,
+				(6 * size_of::<f32>()) as _,
+				0 as _
+			);
+
+			gl::EnableVertexAttribArray(1);
+			gl::VertexAttribPointer(
+				1, 4, gl::FLOAT,
+				gl::FALSE,
+				(6 * size_of::<f32>()) as _,
+				(2 * size_of::<f32>()) as _
 			);
 		}
 
@@ -163,6 +172,7 @@ impl Camera
 
 	pub fn toggleTransform(&mut self, enable: bool)
 	{
+		self.useTS = enable;
 		let proj = if enable { self.worldProj } else { self.uiProj };
 		let view = if enable {self.ts.getMatrix()} else {glam::Mat4::IDENTITY};
 		Window::updateMatrices(proj, view);
@@ -226,5 +236,21 @@ impl Camera
 	pub fn getSize(&self) -> glam::Vec2
 	{
 		self.size
+	}
+
+	pub fn getBounds(&mut self) -> glam::Vec4
+	{
+		let s =
+			if self.useTS { self.getSize() }
+			else { glam::vec2(Window::getSize().0 as f32, Window::getSize().1 as f32) };
+		let m = self.ts.getMatrix();
+		let p1 = m * glam::vec4(0.0, 0.0, 0.0, 1.0);
+		let p2 = m * glam::vec4(s.x, 0.0, 0.0, 1.0);
+		let p3 = m * glam::vec4(s.x, s.y, 0.0, 1.0);
+		let p4 = m * glam::vec4(0.0, s.y, 0.0, 1.0);
+		
+		let min = p1.min(p2).min(p3).min(p4);
+		let max = p1.max(p2).max(p3).max(p4);
+		glam::vec4(min.x, min.y, max.x - min.x, max.y - min.y)
 	}
 }

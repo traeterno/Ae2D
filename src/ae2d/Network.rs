@@ -151,20 +151,6 @@ impl Network
 		std::thread::spawn(Network::updateThread);
 	}
 
-	pub fn setPlayersCount(&mut self, playersCount: u8)
-	{
-		for i in 1..=playersCount
-		{
-			self.avatars.insert(i, Account::default());
-		}
-		self.state.resize(playersCount as usize, PlayerState::default());
-	}
-
-	pub fn getEP(&self) -> bool
-	{
-		self.state.len() / 5 == 2
-	}
-
 	fn receiveUDP(&mut self) -> Option<Vec<u8>>
 	{
 		let udp = self.udp.as_mut().unwrap();

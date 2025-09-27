@@ -39,17 +39,17 @@ impl Account
 		out
 	}
 
-	pub fn addItem(&mut self, item: String)
-	{
-		for entry in &mut self.inventory
-		{
-			if entry.0 == item && entry.1 < u8::MAX { entry.1 += 1; return; }
-		}
-		for entry in &mut self.inventory
-		{
-			if entry.0.is_empty() { *entry = (item, 1); return; }
-		}
-	}
+	// pub fn addItem(&mut self, item: String)
+	// {
+	// 	for entry in &mut self.inventory
+	// 	{
+	// 		if entry.0 == item && entry.1 < u8::MAX { entry.1 += 1; return; }
+	// 	}
+	// 	for entry in &mut self.inventory
+	// 	{
+	// 		if entry.0.is_empty() { *entry = (item, 1); return; }
+	// 	}
+	// }
 
 	pub fn useItem(&mut self, slot: u8) -> (bool, String)
 	{
@@ -65,7 +65,6 @@ impl Account
 
 pub struct Settings
 {
-	pub extendPlayers: bool,
 	pub tickRate: u8,
 	pub firstCP: String,
 	pub maxItemCellSize: u8,
@@ -96,7 +95,7 @@ impl State
 			chatHistory: vec![],
 			settings: Settings
 			{
-				extendPlayers: false, tickRate: 1, firstCP: String::from("main"),
+				tickRate: 1, firstCP: String::from("main"),
 				maxItemCellSize: 64,
 				sendTime: std::time::Duration::from_secs(1)
 			},
@@ -164,7 +163,7 @@ impl State
 					let mut inventory = [const { (String::new(), 0)}; 8];
 					for i in 0..8
 					{
-						if inv.len() <= i { break; }
+						if i >= inv.len() { break; }
 						inventory[i] = inv[i].clone();
 					}
 
@@ -192,10 +191,6 @@ impl State
 			{
 				for (var, value) in section.1.entries()
 				{
-					if var == "extendPlayers"
-					{
-						state.settings.extendPlayers = value.as_bool().unwrap();
-					}
 					if var == "tickRate"
 					{
 						state.settings.tickRate = value.as_u8().unwrap();
@@ -240,6 +235,14 @@ impl State
 		let mut players = json::JsonValue::new_object();
 		for (ip, data) in &self.accounts
 		{
+			let mut inv = json::array![];
+			for (id, count) in &data.inventory
+			{
+				let _ = inv.push(json::object!{
+					id: id.clone(),
+					count: *count
+				});
+			}
 			let _ = players.insert(&ip.to_string(), json::object!
 			{
 				name: data.name.clone(),
@@ -248,7 +251,8 @@ impl State
 					r: data.color.0,
 					g: data.color.1,
 					b: data.color.2
-				}
+				},
+				inventory: inv
 			});
 		}
 		for (_, c) in Server::getPlayers()
@@ -283,7 +287,6 @@ impl State
 				checkpoint: self.save.checkpoint.clone()
 			},
 			settings: {
-				extendPlayers: self.settings.extendPlayers,
 				tickRate: self.settings.tickRate,
 				firstCP: self.settings.firstCP.clone(),
 				maxItemCellSize: self.settings.maxItemCellSize
@@ -304,11 +307,6 @@ impl State
 		}
 		self.accounts.get(&ip).unwrap().clone()
 	}
-	
-	// pub fn updateAccounts(&mut self, ip: IpAddr, pi: Account)
-	// {
-	// 	self.accounts.insert(ip, pi);
-	// }
 
 	pub fn getDateTime() -> String
 	{
@@ -365,8 +363,78 @@ impl State
 		}
 	}
 
-	pub fn getPlayersCount(&self) -> u8
+	pub fn jsonState(&self) -> json::JsonValue
 	{
-		5 * if self.settings.extendPlayers { 2 } else { 1 }
+		json::array![
+			{
+				title: "Сохранение",
+				props: {
+					"Чекпоинт": self.save.checkpoint.clone(),
+					"Дата сохранения": self.save.date.clone()
+				}
+			}
+		]
+	}
+
+	pub fn jsonSettings(&self) -> json::JsonValue
+	{
+		json::object!
+		{
+			"Сервер": {
+				tickRate: {
+					type: "range",
+					name: "Частота синхронизации",
+					value: self.settings.tickRate,
+					props: { min: 1, max: 100 }
+				},
+				firstCP: {
+					type: "string",
+					name: "Начальный чекпоинт",
+					value: self.settings.firstCP.clone()
+				},
+				maxItemCellSize: {
+					type: "range",
+					name: "Максимальное количество предметов в ячейке инвентаря",
+					value: self.settings.maxItemCellSize,
+					props: { min: 1, max: 255 }
+				}
+			}
+		}
+	}
+
+	pub fn jsonChatHistory(&self, offset: usize) -> json::JsonValue
+	{
+		let mut obj = json::array![];
+		if self.chatHistory.len() <= offset { return obj; }
+		for i in offset..self.chatHistory.len()
+		{
+			let (user, msg) = self.chatHistory[i].clone();
+			let _ = obj.push(json::object!{
+				user: user,
+				msg: msg
+			});
+		}
+		obj
+	}
+
+	pub fn jsonPlayers(&self) -> json::JsonValue
+	{
+		let p = Server::getPlayers();
+		let mut arr = json::array![];
+		for i in 1..=5
+		{
+			for (id, c) in p
+			{
+				if *id != i || c.info.name == "noname" { continue; }
+				let _ = arr.push(json::object!{
+					id: *id,
+					name: c.info.name.clone(),
+					className: c.info.class.clone(),
+					hp: { current: c.info.hp, max: 100 },
+					mana: { current: 100, max: 100 }
+				});
+			}
+		}
+		arr
 	}
 }

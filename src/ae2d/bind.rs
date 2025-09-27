@@ -259,6 +259,14 @@ pub fn sprite(s: &Lua)
 		Ok(())
 	}).unwrap());
 
+	let _ = t.set("resetAnimation",
+	s.create_function(|s, _: ()|
+	{
+		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
+		spr.restart();
+		Ok(())
+	}).unwrap());
+
 	let _ = s.globals().set("sprite", t);
 }
 
@@ -455,6 +463,9 @@ pub fn network(s: &Lua)
 
 		net.tcp = Some(tcp);
 		net.udp = Some(udp);
+		net.avatars.clear();
+		for i in 1..=5 { net.avatars.insert(i, Account::default()); }
+		net.state.resize(5, PlayerState::default());
 		std::thread::spawn(Network::tcpThread);
 		Ok(true)
 	}).unwrap());
@@ -575,12 +586,16 @@ pub fn network(s: &Lua)
 					{
 						0 =>
 						{
-							let _ = t.raw_set("playersCount", info[0]);
-							let _ = t.raw_set("tickRate", info[1]);
-							let _ = t.raw_set("maxItemCellSize", info[2]);
+							let _ = t.raw_set("tickRate", info[0]);
+							let _ = t.raw_set("maxItemCellSize", info[1]);
 							let _ = t.raw_set(
 								"udp",
-								u16::from_be_bytes([info[3], info[4]])
+								u16::from_be_bytes([info[2], info[3]])
+							);
+							let _ = t.raw_set("checkpoint",
+								String::from_utf8_lossy(
+									&info[4..info.len()]
+								).to_owned()
 							);
 						}
 						1 =>
@@ -793,19 +808,6 @@ pub fn network(s: &Lua)
 	{
 		Window::getNetwork().setup(x.0, x.1, x.2);
 		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("setPlayersCount",
-	s.create_function(|_, x: u8|
-	{
-		Window::getNetwork().setPlayersCount(x);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("getEP",
-	s.create_function(|_, _: ()|
-	{
-		Ok(Window::getNetwork().getEP())
 	}).unwrap());
 
 	let _ = t.raw_set("getPlayer",

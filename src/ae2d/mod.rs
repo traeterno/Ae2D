@@ -10,3 +10,5 @@ pub mod bind;
 pub mod Network;
 pub mod World;
 pub mod Entity;
+pub mod Skeleton;
+pub mod Shapes;

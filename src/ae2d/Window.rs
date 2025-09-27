@@ -16,6 +16,8 @@ pub struct Window
 	pub mouseEvent: Option<(glfw::MouseButton, glfw::Action, glfw::Modifiers)>,
 	pub keyEvent: Option<(glfw::Key, glfw::Action, glfw::Modifiers)>,
 	pub inputEvent: Option<char>,
+	pub scrollEvent: Option<f32>,
+	pub dndEvent: Option<Vec<String>>,
 	cam: Camera,
 	textures: HashMap<String, u32>,
 	ui: UI,
@@ -47,7 +49,9 @@ impl Window
 			inputEvent: None,
 			world: World::new(),
 			shaders: HashMap::new(),
-			server: None
+			server: None,
+			scrollEvent: None,
+			dndEvent: None
 		}
 	}
 
@@ -170,6 +174,8 @@ impl Window
 		window.set_key_polling(true);
 		window.set_size_polling(true);
 		window.set_char_polling(true);
+		window.set_scroll_polling(true);
+		window.set_drag_and_drop_polling(true);
 		window.make_current();
 		
 		gl::load_with(|name| i.context.get_proc_address_raw(name));
@@ -203,6 +209,8 @@ impl Window
 		i.mouseEvent = None;
 		i.keyEvent = None;
 		i.inputEvent = None;
+		i.scrollEvent = None;
+		i.dndEvent = None;
 		i.deltaTime = i.lastTime.elapsed().as_secs_f32().min(0.1);
 		i.lastTime = std::time::Instant::now();
 		
@@ -235,10 +243,22 @@ impl Window
 					{
 						gl::Viewport(0, 0, w, h);
 					}
-				},
+				}
 				glfw::WindowEvent::Char(c) =>
 				{
 					i.inputEvent = Some(c);
+				}
+				glfw::WindowEvent::Scroll(_, dist) =>
+				{
+					i.scrollEvent = Some(dist as f32);
+				}
+				glfw::WindowEvent::FileDrop(files) =>
+				{
+					i.dndEvent = Some(
+						files.iter().map(|x|
+							x.to_string_lossy().to_string())
+							.collect::<Vec<String>>()
+					);
 				}
 				e => println!("{e:?}")
 			}
@@ -264,6 +284,11 @@ impl Window
 
 	pub fn display()
 	{
+		unsafe
+		{
+			let x = gl::GetError();
+			if x != 0 { println!("GL Error: {x}"); }
+		}
 		Window::getInstance().window.as_mut().unwrap().swap_buffers();
 	}
 
@@ -378,6 +403,7 @@ impl Window
 			"RCtrl" => glfw::Key::RightControl,
 			"LAlt" => glfw::Key::LeftAlt,
 			"RAlt" => glfw::Key::RightAlt,
+			"Tab" => glfw::Key::Tab,
 			_ => glfw::Key::Unknown
 		}
 	}

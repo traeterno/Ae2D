@@ -68,16 +68,17 @@ impl World
 		}
 		for l in &mut self.layers { *l = (vec![], vec![]); }
 		bind::execFunc(&self.script, "Update");
-		for i in 0..self.ents.len()
+		for mut i in 0..self.ents.len() as i16
 		{
-			let (layer, opaque) = self.ents[i].update();
+			let (layer, opaque) = self.ents[i as usize].update();
+			if layer == 255 { i -= 1; self.ents.remove((i + 1) as usize); continue; }
 			if opaque
 			{
-				self.layers[layer as usize].0.push(self.ents[i].getID());
+				self.layers[layer as usize].0.push(self.ents[i as usize].getID());
 			}
 			else
 			{
-				self.layers[layer as usize].1.push(self.ents[i].getID());
+				self.layers[layer as usize].1.push(self.ents[i as usize].getID());
 			}
 		}
 	}

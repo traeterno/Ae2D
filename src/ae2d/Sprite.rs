@@ -300,10 +300,11 @@ impl Sprite
 		self.restart();
 	}
 
-	fn restart(&mut self)
+	pub fn restart(&mut self)
 	{
 		if let Some(x) = self.animations.get_mut(&self.currentAnimation)
 		{
+			x.repeated = 0;
 			x.currentFrame = 0;
 			x.currentTime = 0.0;
 		}
