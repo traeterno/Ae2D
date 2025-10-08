@@ -1,149 +1,224 @@
 #![allow(non_snake_case, static_mut_refs, dead_code)]
 
-use std::sync::LazyLock;
+use std::{env, sync::LazyLock};
 
-use crate::ae2d::{Shapes, Skeleton::Skeleton, Window::Window};
+use crate::ae2d::{Shapes, Skeleton::{Bone, Skeleton}, Window::Window};
 
 mod ae2d;
 mod server;
 
-#[derive(Clone, Copy)]
-enum FileType { Rig, SpriteList, AnimList }
-
-static mut PATH: LazyLock<(FileType, String)> = LazyLock::new(|| (FileType::Rig, String::new()));
 static mut SKELETON: LazyLock<Skeleton> = LazyLock::new(|| Skeleton::new());
-static mut FILESELECTION: LazyLock<FileType> = LazyLock::new(|| FileType::Rig);
+static mut RIG: LazyLock<String> = LazyLock::new(|| String::new());
+static mut SL: LazyLock<String> = LazyLock::new(|| String::new());
+static mut TEX: LazyLock<String> = LazyLock::new(|| String::new());
 
-fn initExec()
+fn initLua()
 {
 	let s = Window::getUI().getObject("toolbox".to_string()).getScript();
-	let _ = s.globals().raw_set(
-		"Exec",
-		s.create_function(|_, cmd: String|
-		{
-			println!("Called \"{cmd}\"");
-			exec(cmd); Ok(())
-		}).unwrap()
-	);
+	let _ = s.globals().raw_set("Exec", s.create_function(
+		|s, cmd: String| unsafe { Ok(exec(s, cmd)) }
+	).unwrap());
 }
 
-fn exec(cmd: String)
+unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 {
-	let args = cmd.split(" ")
-		.collect::<Vec<&str>>();
-	if args[0] == "page"
+	let args: Vec<&str> = cmd.split("|").collect();
+	if args[0] == "load"
 	{
-		unsafe
+		if args[1] == "rig"
 		{
-			if args[1] == "0" { *FILESELECTION = FileType::Rig; }
-			if args[1] == "1" { *FILESELECTION = FileType::SpriteList; }
-			if args[1] == "2" { *FILESELECTION = FileType::AnimList; }
+			*RIG = args[2].to_string();
+			(*SKELETON).loadRig((*RIG).clone());
+		}
+		if args[1] == "sl"
+		{
+			*SL = args[2].to_string();
+			*TEX = (*SKELETON).loadSL((*SL).clone());
+		}
+		if args[1] == "texture"
+		{
+			*TEX = std::path::Path::new(args[2])
+				.strip_prefix(env::current_dir().unwrap()).unwrap()
+				.to_string_lossy().to_string().replace("\\", "/");
+			(*SKELETON).loadTexture((*TEX).clone());
 		}
 	}
-	if args[0] == "reload"
+	if args[0] == "bone"
 	{
-		unsafe
+		let mut path: Vec<&str> = args[2].split("/").collect();
+		path.remove(0);
+		path.remove(0);
+		if let Some(b) = (*SKELETON).getRoot().resolvePath(path.clone())
 		{
-			let (kind, path) = &*PATH;
-			match *kind
+			match args[1]
 			{
-				FileType::Rig => (*SKELETON).loadRig(path.clone()),
-				FileType::SpriteList => (*SKELETON).loadSprites(path.clone()),
+				"name" =>
+				{
+					let n = path.pop().unwrap_or_default();
+					if n.is_empty() { return mlua::Value::Nil; }
+					let x = (*SKELETON).getRoot().resolvePath(path).unwrap();
+					let bl = x.getBones();
+					let a = bl.remove(&n.to_string()).unwrap();
+					bl.insert(args[3].to_string(), a);
+				}
+				"angle" => b.angle = args[3].parse().unwrap_or(0.0),
+				"length" => b.length = args[3].parse().unwrap_or(0.0),
+				"texture" => b.texture = args[3].to_string(),
+				"layer" => b.layer = args[3].parse().unwrap_or(0),
+				"info" =>
+				{
+					let t = s.create_table().unwrap();
+					let _ = t.raw_set("length", b.length);
+					let _ = t.raw_set("angle", b.angle);
+					let _ = t.raw_set("texture", b.texture.clone());
+					let _ = t.raw_set("layer", b.layer);
+					return mlua::Value::Table(t);
+				}
+				"list" =>
+				{
+					return mlua::Value::Table((*SKELETON).getRoot().serialize(s));
+				}
+				"new" =>
+				{
+					let s = b.getBones().len();
+					b.getBones().insert(
+						format!("bone{s}"),
+						Bone::new()
+					);
+				}
+				"delete" =>
+				{
+					let n = path.pop().unwrap_or_default();
+					if n.is_empty() { return mlua::Value::Nil; }
+					if let Some(x) = (*SKELETON).getRoot().resolvePath(path)
+					{
+						x.getBones().remove(&n.to_string());
+					}
+				}
+				"highlight" => { b.highlight = true; }
 				_ => {}
 			}
 		}
 	}
-}
-
-#[derive(PartialEq, Clone, Copy)]
-enum Action
-{
-	MoveCam
+	if args[0] == "sl"
+	{
+		let sl = (*SKELETON).getSL();
+		let spr = sl.get_mut(
+			&args.get(2).unwrap_or(&"").to_string()
+		);
+		match args[1]
+		{
+			"new" =>
+			{ 
+				sl.insert(format!("sprite{}", sl.len()),
+					(glam::Vec4::ZERO, glam::Vec2::ZERO)
+				);
+			}
+			"delete" =>
+			{
+				sl.remove(&args[2].to_string());
+			}
+			"info" => if let Some((r, o)) = spr
+			{
+				let t = s.create_table().unwrap();
+				let _ = t.raw_set("rect", [r.x, r.y, r.z, r.w]);
+				let _ = t.raw_set("origin", [o.x, o.y]);
+				return mlua::Value::Table(t);
+			}
+			"list" =>
+			{
+				let t = s.create_table().unwrap();
+				for (n, _) in sl { let _ = t.raw_push(n.clone()); }
+				return mlua::Value::Table(t);
+			}
+			"name" => if let Some((r, o)) = spr.cloned()
+			{
+				sl.insert(args[3].to_string(), (r, o));
+				sl.remove(&args[2].to_string());
+			}
+			"ox" => if let Some((_, o)) = spr { o.x = args[3].parse().unwrap(); }
+			"oy" => if let Some((_, o)) = spr { o.y = args[3].parse().unwrap(); }
+			"rx" => if let Some((r, _)) = spr { r.x = args[3].parse().unwrap(); }
+			"ry" => if let Some((r, _)) = spr { r.y = args[3].parse().unwrap(); }
+			"rw" => if let Some((r, _)) = spr { r.z = args[3].parse().unwrap(); }
+			"rh" => if let Some((r, _)) = spr { r.w = args[3].parse().unwrap(); }
+			_ => {}
+		}
+	}
+	if args[0] == "files"
+	{
+		let t = s.create_table().unwrap();
+		let _ = t.raw_set("rig", (*RIG).clone());
+		let _ = t.raw_set("sl", (*SL).clone());
+		let _ = t.raw_set("al", String::new());
+		let _ = t.raw_set("tex", (*TEX).clone());
+		return mlua::Value::Table(t);
+	}
+	if args[0] == "save"
+	{
+		let mut doc = json::object!{};
+		println!("Saving {} to {}...", args[1], args[2]);
+		if args[1] == "rig"
+		{
+			let _ = doc.insert("root", (*SKELETON).getRoot().toJSON());
+		}
+		if args[1] == "sl"
+		{
+			let mut s = json::object!{};
+			for (name, (r, o)) in (*SKELETON).getSL()
+			{
+				let _ = s.insert(&name, json::object!{
+					rect: [r.x, r.y, r.z, r.w],
+					offset: [o.x, o.y]
+				});
+			}
+			doc = json::object!{
+				texture: (*TEX).clone(),
+				sprites: s
+			}
+		}
+		let _ = std::fs::write(args[2], json::stringify(doc));
+	}
+	if args[0] == "debug"
+	{
+		(*SKELETON).debug = args[1].parse().unwrap_or(false);
+	}
+	mlua::Value::Nil
 }
 
 fn main()
 {
 	Window::init("res/global/se.json");
 	let cam = Window::getCamera();
-	cam.setSize(true, Window::getSize());
-	cam.getTransformable().setOrigin(glam::vec2(
-		(-Window::getSize().0 as f32 / 4.0 * 3.0) * 0.5,
-		-Window::getSize().1 as f32 * 0.5
-	));
 
-	initExec();
+	initLua();
 
-	unsafe { gl::Enable(gl::BLEND); }
-
-	let mut mpos = (0.0, 0.0);
-	let mut maction = None;
-	let mut scale = 1.0f32;
+	unsafe
+	{
+		let p = &Window::getInstance().prog;
+		if let Some(x) = p.get(&String::from("rig"))
+		{
+			*RIG = x.string.clone();
+			(*SKELETON).loadRig((*RIG).clone());
+		}
+		if let Some(x) = p.get(&String::from("sl"))
+		{
+			*SL = x.string.clone();
+			*TEX = (*SKELETON).loadSL((*SL).clone());
+		}
+		gl::Enable(gl::BLEND);
+	}
 
 	while Window::isOpen()
 	{
 		Window::update();
-
-		let (mx, my) = Window::getInstance().window.as_mut()
-			.unwrap().get_cursor_pos();
-		let mx = mx as f32;
-		let my = my as f32;
-		let ws =
-			mx <= Window::getSize().0 as f32 / 4.0 * 3.0 &&
-			my <= Window::getSize().1 as f32 / 4.0 * 3.0;
 
 		if let Some(e) = Window::getInstance().keyEvent
 		{
 			if e.0 == glfw::Key::F1 && e.1 == glfw::Action::Press
 			{
 				Window::getUI().load("res/ui/se.json");
-				initExec();
-			}
-		}
-		if let Some(e) = Window::getInstance().mouseEvent
-		{
-			let pressed = e.1 == glfw::Action::Press;
-			if e.0 == glfw::MouseButtonMiddle
-			{
-				maction = if pressed && ws { Some(Action::MoveCam) } else { None };
-			}
-		}
-		if let Some(e) = Window::getInstance().scrollEvent
-		{
-			if ws
-			{
-				let dist =
-					if e < 0.0 { 0.5 * e.abs() }
-					else { 2.0 * e };
-				scale *= dist;
-				let sx = Window::getSize().0 as f32 * scale;
-				let sy = Window::getSize().1 as f32 * scale;
-				cam.setSize(true, (
-					sx as i32,
-					sy as i32
-				));
-				cam.getTransformable().setOrigin(glam::vec2(
-					-sx * 0.5,
-					-sy * 0.5
-				));
-			}
-		}
-		if let Some(file) = &Window::getInstance().dndEvent
-		{
-			unsafe
-			{
-				*PATH = (*FILESELECTION, file[0].clone());
-				exec(String::from("reload"));
-			}
-		}
-
-		if let Some(act) = maction
-		{
-			if act == Action::MoveCam
-			{
-				cam.getTransformable().translate(glam::vec2(
-					(mx - mpos.0) * scale,
-					(my - mpos.1) * scale
-				));
+				initLua();
 			}
 		}
 		
@@ -170,6 +245,5 @@ fn main()
 		cam.display();
 		cam.draw(Window::getUI());
 		Window::display();
-		mpos = (mx, my);
 	}
 }

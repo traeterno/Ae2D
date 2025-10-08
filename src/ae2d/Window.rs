@@ -273,6 +273,8 @@ impl Window
 	{
 		let i = Window::getInstance();
 
+		if i.window.as_mut().unwrap().is_iconified() { return; }
+
 		i.cam.clear();
 		i.cam.toggleTransform(true);
 		i.cam.draw(&mut i.world);
@@ -284,6 +286,7 @@ impl Window
 
 	pub fn display()
 	{
+		if Window::getInstance().window.as_mut().unwrap().is_iconified() { return; }
 		unsafe
 		{
 			let x = gl::GetError();
@@ -404,6 +407,10 @@ impl Window
 			"LAlt" => glfw::Key::LeftAlt,
 			"RAlt" => glfw::Key::RightAlt,
 			"Tab" => glfw::Key::Tab,
+			"Minus" => glfw::Key::Minus,
+			"Equal" => glfw::Key::Equal,
+			"KpSubtract" => glfw::Key::KpSubtract,
+			"KpAdd" => glfw::Key::KpAdd,
 			_ => glfw::Key::Unknown
 		}
 	}

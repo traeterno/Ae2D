@@ -1047,6 +1047,24 @@ pub fn window(script: &Lua)
 		Ok((p.x * s3.x, p.y * s3.y))
 	}).unwrap());
 
+	let _ = table.raw_set("droppedFiles",
+	script.create_function(|s, _: ()|
+	{
+		let t = s.create_table().unwrap();
+		if let Some(f) = &Window::getInstance().dndEvent
+		{
+			for x in f { let _ = t.raw_push(x.as_str()); }
+		}
+		Ok(t)
+	}).unwrap());
+
+	let _ = table.raw_set("mouseWheel",
+	script.create_function(|_, _: ()|
+	{
+		if let Some(f) = &Window::getInstance().scrollEvent { Ok(*f) }
+		else { Ok(0.0) }
+	}).unwrap());
+
 	let _ = script.globals().raw_set("window", table);
 }
 
