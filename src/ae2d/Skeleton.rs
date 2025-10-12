@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ae2d::{Camera::Drawable, Shapes, Sprite::Sprite};
+use crate::ae2d::{Camera::Drawable, Shapes, Sprite::Sprite, Window::Window};
 
 pub type SpriteList = HashMap<String, (glam::Vec4, glam::Vec2)>;
 
@@ -162,12 +162,222 @@ impl Bone
 	}
 }
 
+pub enum Interpolation
+{
+	Const,
+	Linear,
+	CubicIn, CubicOut, CubicInOut,
+	SineIn, SineOut, SineInOut
+}
+
+pub struct Frame
+{
+	pub timestamp: f32,
+	pub angle: (Interpolation, f32),
+	pub texture: String
+}
+
+impl Frame
+{
+	pub fn new() -> Self
+	{
+		Self
+		{
+			timestamp: 1.0,
+			angle: (Interpolation::Const, 0.0),
+			texture: String::new()
+		}
+	}
+
+	pub fn parse(node: &json::JsonValue, ts: f32) -> Self
+	{
+		let mut f = Self::new();
+		f.timestamp = ts;
+		for (var, value) in node.entries()
+		{
+			if var == "angle"
+			{
+				let a = value.as_str()
+					.unwrap_or("").split(" ")
+					.collect::<Vec<&str>>();
+				let angle = a[1].parse::<f32>().unwrap_or(0.0);
+				f.angle = (match a[0]
+				{
+					"Linear" => Interpolation::Linear,
+					"CubicIn" => Interpolation::CubicIn,
+					"CubicOut" => Interpolation::CubicOut,
+					"CubicInOut" => Interpolation::CubicInOut,
+					"SineIn" => Interpolation::SineIn,
+					"SineOut" => Interpolation::SineOut,
+					"SineInOut" => Interpolation::SineInOut,
+					_ => Interpolation::Const
+				}, angle);
+			}
+			if var == "texture"
+			{
+				f.texture = value.as_str().unwrap_or("").to_string();
+			}
+		}
+		f
+	}
+}
+
+pub struct Timeline
+{
+	pub frames: Vec<Frame>,
+	pub time: f32,
+	pub current: usize
+}
+
+impl Timeline
+{
+	pub fn new() -> Self
+	{
+		Self
+		{
+			frames: vec![],
+			time: 0.0,
+			current: 0
+		}
+	}
+
+	pub fn parse(node: &json::JsonValue) -> Self
+	{
+		let mut tl = Self::new();
+		for (point, frame) in node.entries()
+		{
+			tl.frames.push(Frame::parse(
+				frame,
+				point.parse().unwrap()
+			));
+		}
+		tl
+	}
+
+	pub fn update(&mut self, bone: &mut Bone, repeat: bool)
+	{
+		if self.frames.len() == 0 { return; }
+		if self.current == self.frames.len() - 1
+		{
+			if !repeat { return; }
+			self.current = 0;
+			self.time = 0.0;
+		}
+
+		if self.frames.len() == 1
+		{
+			let f = &self.frames[0];
+			bone.angle = f.angle.1;
+			if !f.texture.is_empty() { bone.texture = f.texture.clone(); }
+			return;
+		}
+
+		let start = &self.frames[self.current];
+		let end = &self.frames[self.current + 1];
+
+		let ct = self.time - start.timestamp;
+		let t = ct / (end.timestamp - start.timestamp);
+		let a = end.angle.1 - start.angle.1;
+
+		if !start.texture.is_empty() { bone.texture = start.texture.clone(); }
+
+		bone.angle = start.angle.1 + a * match start.angle.0
+		{
+			Interpolation::Const => 0.0,
+			Interpolation::Linear => t,
+			Interpolation::CubicIn => t.powi(3),
+			Interpolation::CubicOut => 1.0 - (t - 1.0).powi(3),
+			Interpolation::CubicInOut =>
+				if t < 0.5 { 4.0 * t.powi(3) }
+				else { 1.0 - (-2.0 * t + 2.0).powi(3) / 2.0 },
+			Interpolation::SineIn => 1.0 - (t * std::f32::consts::PI / 2.0).cos(),
+			Interpolation::SineOut => (t * std::f32::consts::PI / 2.0).sin(),
+			Interpolation::SineInOut => -((t * std::f32::consts::PI).cos() - 1.0) / 2.0
+		};
+
+		self.time += Window::getDeltaTime();
+		if self.time >= end.timestamp { self.current += 1; }
+	}
+}
+
+pub struct Animation
+{
+	pub repeat: bool,
+	pub bones: HashMap<String, Timeline>
+}
+
+impl Animation
+{
+	pub fn new() -> Self
+	{
+		Self
+		{
+			repeat: false,
+			bones: HashMap::new()
+		}
+	}
+
+	pub fn parse(node: &json::JsonValue) -> Self
+	{
+		let mut anim = Self::new();
+		for (section, data) in node.entries()
+		{
+			if section == "repeat" { anim.repeat = data.as_bool().unwrap(); }
+			if section == "bones"
+			{
+				for (path, frames) in data.entries()
+				{
+					anim.bones.insert(
+						path.to_string(),
+						Timeline::parse(frames)
+					);
+				}
+			}
+		}
+		anim.calculateDuration();
+		anim
+	}
+
+	pub fn update(&mut self, root: &mut Bone)
+	{
+		for (bone, timeline) in &mut self.bones
+		{
+			let path = bone.split("/").collect::<Vec<&str>>();
+			if let Some(bone) = root.resolvePath(path)
+			{
+				timeline.update(bone, self.repeat);
+			}
+		}
+	}
+
+	pub fn restart(&mut self)
+	{
+		for (_, tl) in &mut self.bones { tl.time = 0.0; }
+	}
+
+	pub fn calculateDuration(&mut self) -> f32
+	{
+		let mut d = 0.0f32;
+		for (_, tl) in &self.bones
+		{
+			if let Some(f) = tl.frames.last()
+			{
+				d = d.max(f.timestamp);
+			}
+		}
+		d
+	}
+}
+
 pub struct Skeleton
 {
 	root: Bone,
 	sprites: SpriteList,
 	visible: Sprite,
-	pub debug: bool
+	anims: HashMap<String, Animation>,
+	currentAnim: String,
+	pub debug: bool,
+	pub activeAnim: bool
 }
 
 impl Skeleton
@@ -179,7 +389,10 @@ impl Skeleton
 			root: Bone::new(),
 			sprites: HashMap::new(),
 			visible: Sprite::default(),
-			debug: true
+			anims: HashMap::new(),
+			currentAnim: String::new(),
+			debug: true,
+			activeAnim: true
 		}
 	}
 
@@ -205,6 +418,7 @@ impl Skeleton
 		if raw.is_err() { return texPath; }
 		if let Ok(root) = json::parse(&raw.unwrap())
 		{
+			self.sprites.clear();
 			for (var, value) in root.entries()
 			{
 				if var == "texture"
@@ -247,6 +461,25 @@ impl Skeleton
 		texPath
 	}
 
+	pub fn loadAL(&mut self, path: String)
+	{
+		println!("Loading animation list from {path}...");
+		let raw = std::fs::read_to_string(path);
+		if raw.is_err() { return; }
+		if let Ok(root) = json::parse(&raw.unwrap())
+		{
+			if root.len() == 0 { return; }
+			self.anims.clear();
+			for (name, value) in root.entries()
+			{
+				self.anims.insert(
+					name.to_string(),
+					Animation::parse(value)
+				);
+			}
+		}
+	}
+
 	pub fn update(&mut self) { self.root.update(glam::Vec2::ZERO, 0.0); }
 
 	pub fn getRoot(&mut self) -> &mut Bone { &mut self.root }
@@ -257,13 +490,37 @@ impl Skeleton
 	{
 		self.visible = Sprite::image(path);
 	}
+
+	pub fn setAnimation(&mut self, anim: String)
+	{
+		if self.currentAnim == anim { return; }
+		if !self.anims.contains_key(&anim) { return; }
+		if let Some(a) = self.anims.get_mut(&self.currentAnim)
+		{
+			a.restart();
+		}
+		self.currentAnim = anim;
+	}
+
+	pub fn getCurrentAnimation(&mut self) -> (String, Option<&mut Animation>)
+	{
+		(self.currentAnim.clone(), self.anims.get_mut(&self.currentAnim))
+	}
 }
 
 impl Drawable for Skeleton
 {
 	fn draw(&mut self)
 	{
-		for i in 0..=5
+		if self.activeAnim
+		{
+			if let Some(a) = self.anims.get_mut(&self.currentAnim)
+			{
+				a.update(&mut self.root);
+			}
+		}
+		
+		for i in 0..10
 		{
 			self.root.draw(&mut self.visible, &self.sprites, i);
 		}

@@ -2,7 +2,7 @@
 
 use std::{env, sync::LazyLock};
 
-use crate::ae2d::{Shapes, Skeleton::{Bone, Skeleton}, Window::Window};
+use crate::ae2d::{Shapes, Skeleton::{Bone, Interpolation, Skeleton}, Window::Window};
 
 mod ae2d;
 mod server;
@@ -11,10 +11,10 @@ static mut SKELETON: LazyLock<Skeleton> = LazyLock::new(|| Skeleton::new());
 static mut RIG: LazyLock<String> = LazyLock::new(|| String::new());
 static mut SL: LazyLock<String> = LazyLock::new(|| String::new());
 static mut TEX: LazyLock<String> = LazyLock::new(|| String::new());
+static mut AL: LazyLock<String> = LazyLock::new(|| String::new());
 
-fn initLua()
+fn initLua(s: &mlua::Lua)
 {
-	let s = Window::getUI().getObject("toolbox".to_string()).getScript();
 	let _ = s.globals().raw_set("Exec", s.create_function(
 		|s, cmd: String| unsafe { Ok(exec(s, cmd)) }
 	).unwrap());
@@ -41,6 +41,11 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 				.strip_prefix(env::current_dir().unwrap()).unwrap()
 				.to_string_lossy().to_string().replace("\\", "/");
 			(*SKELETON).loadTexture((*TEX).clone());
+		}
+		if args[1] == "al"
+		{
+			*AL = args[2].to_string();
+			(*SKELETON).loadAL((*AL).clone());
 		}
 	}
 	if args[0] == "bone"
@@ -177,11 +182,83 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 				sprites: s
 			}
 		}
+		if args[1] == "al"
+		{
+			// 
+		}
 		let _ = std::fs::write(args[2], json::stringify(doc));
 	}
 	if args[0] == "debug"
 	{
 		(*SKELETON).debug = args[1].parse().unwrap_or(false);
+	}
+	if args[0] == "anim"
+	{
+		let anim = (*SKELETON).getCurrentAnimation();
+		if args[1] == "toggle"
+		{
+			(*SKELETON).activeAnim = !(*SKELETON).activeAnim;
+		}
+		if args[1] == "current"
+		{
+			let t = s.create_table().unwrap();
+			let _ = t.raw_set("name", anim.0);
+			if let Some(a) = anim.1
+			{
+				let _ = t.raw_set("duration", a.calculateDuration());
+			}
+			let _ = t.raw_set("active", (*SKELETON).activeAnim);
+			return mlua::Value::Table(t);
+		}
+		if args[1] == "tl"
+		{
+			let mut path = args[2].strip_prefix("/root").unwrap();
+			if let Some(p) = path.strip_prefix("/") { path = p; }
+			if anim.1.is_none() { return mlua::Value::Nil; }
+			if let Some(ref a) = anim.1
+			{
+				if let Some(x) = a.bones.get(&path.to_string())
+				{
+					let t = s.create_table().unwrap();
+					let _ = t.raw_set("time", x.time);
+					let _ = t.raw_set("current", x.current);
+					let tl = s.create_table().unwrap();
+					for f in &x.frames
+					{
+						let frame = s.create_table().unwrap();
+						let _ = frame.raw_set("timestamp", f.timestamp);
+						let _ = frame.raw_set("angleInterpolation", match f.angle.0
+						{
+							Interpolation::Const => "Const",
+							Interpolation::Linear => "Linear",
+							Interpolation::CubicIn => "CubicIn",
+							Interpolation::CubicOut => "CubicOut",
+							Interpolation::CubicInOut => "CubicInOut",
+							Interpolation::SineIn => "SineIn",
+							Interpolation::SineOut => "SineOut",
+							Interpolation::SineInOut => "SineInOut",
+						});
+						let _ = frame.raw_set("angle", f.angle.1);
+						let _ = frame.raw_set("texture", f.texture.clone());
+	
+						let _ = tl.raw_push(frame);
+					}
+					let _ = t.raw_set("frames", tl);
+					return mlua::Value::Table(t);
+				}
+			}
+		}
+		if args[1] == "jump"
+		{
+			if let Some(a) = anim.1
+			{
+				for (_, tl) in &mut a.bones
+				{
+					tl.time = args[2].parse().unwrap_or(0.0);
+				}
+				a.update((*SKELETON).getRoot());
+			}
+		}
 	}
 	mlua::Value::Nil
 }
@@ -191,7 +268,8 @@ fn main()
 	Window::init("res/global/se.json");
 	let cam = Window::getCamera();
 
-	initLua();
+	initLua(Window::getUI().getObject(String::from("toolbox")).getScript());
+	initLua(Window::getUI().getObject(String::from("timeline")).getScript());
 
 	unsafe
 	{
@@ -206,6 +284,12 @@ fn main()
 			*SL = x.string.clone();
 			*TEX = (*SKELETON).loadSL((*SL).clone());
 		}
+		if let Some(x) = p.get(&String::from("al"))
+		{
+			*AL = x.string.clone();
+			(*SKELETON).loadAL((*AL).clone());
+			(*SKELETON).setAnimation(String::from("idle"));
+		}
 		gl::Enable(gl::BLEND);
 	}
 
@@ -218,7 +302,8 @@ fn main()
 			if e.0 == glfw::Key::F1 && e.1 == glfw::Action::Press
 			{
 				Window::getUI().load("res/ui/se.json");
-				initLua();
+				initLua(Window::getUI().getObject(String::from("toolbox")).getScript());
+				initLua(Window::getUI().getObject(String::from("timeline")).getScript());
 			}
 		}
 		
