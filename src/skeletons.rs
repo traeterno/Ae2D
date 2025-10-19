@@ -1,8 +1,8 @@
 #![allow(non_snake_case, static_mut_refs, dead_code)]
 
-use std::{env, sync::LazyLock};
+use std::{cmp::Ordering, env, sync::LazyLock};
 
-use crate::ae2d::{Shapes, Skeleton::{Bone, Interpolation, Skeleton}, Window::Window};
+use crate::ae2d::{Shapes, Skeleton::{Animation, Bone, Frame, Interpolation, Skeleton, Timeline}, Window::Window};
 
 mod ae2d;
 mod server;
@@ -155,7 +155,7 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 		let t = s.create_table().unwrap();
 		let _ = t.raw_set("rig", (*RIG).clone());
 		let _ = t.raw_set("sl", (*SL).clone());
-		let _ = t.raw_set("al", String::new());
+		let _ = t.raw_set("al", (*AL).clone());
 		let _ = t.raw_set("tex", (*TEX).clone());
 		return mlua::Value::Table(t);
 	}
@@ -184,7 +184,31 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 		}
 		if args[1] == "al"
 		{
-			// 
+			for (name, anim) in (*SKELETON).getAnimations()
+			{
+				let mut bones = json::object!{};
+
+				for (b, tl) in &anim.bones
+				{
+					let mut line = json::object!{};
+
+					for f in &tl.frames
+					{
+						let angle = f.angle.0.to_string() + " " + &f.angle.1.to_string();
+						let _ = line.insert(&f.timestamp.to_string(), json::object!{
+							angle: angle,
+							texture: f.texture.clone()
+						});
+					}
+					
+					let _ = bones.insert(b.as_str(), line);
+				}
+				
+				let _ = doc.insert(name.as_str(), json::object!{
+					repeat: anim.repeat,
+					bones: bones
+				});
+			}
 		}
 		let _ = std::fs::write(args[2], json::stringify(doc));
 	}
@@ -195,68 +219,216 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 	if args[0] == "anim"
 	{
 		let anim = (*SKELETON).getCurrentAnimation();
-		if args[1] == "toggle"
+		if args[1] == "list"
+		{
+			let t = s.create_table().unwrap();
+			for (n, _) in (*SKELETON).getAnimations()
+			{
+				let _ = t.raw_push(n.clone());
+			}
+			return mlua::Value::Table(t);
+		}
+		else if args[1] == "toggle"
 		{
 			(*SKELETON).activeAnim = !(*SKELETON).activeAnim;
 		}
-		if args[1] == "current"
+		else if args[1] == "current"
 		{
 			let t = s.create_table().unwrap();
 			let _ = t.raw_set("name", anim.0);
 			if let Some(a) = anim.1
 			{
-				let _ = t.raw_set("duration", a.calculateDuration());
+				let _ = t.raw_set("duration", a.duration);
+				let _ = t.raw_set("time", a.time);
 			}
 			let _ = t.raw_set("active", (*SKELETON).activeAnim);
 			return mlua::Value::Table(t);
 		}
-		if args[1] == "tl"
+		else if args[1] == "tl"
 		{
-			let mut path = args[2].strip_prefix("/root").unwrap();
+			let mut path = args[2].strip_prefix("/root").unwrap_or(args[2]);
 			if let Some(p) = path.strip_prefix("/") { path = p; }
 			if anim.1.is_none() { return mlua::Value::Nil; }
-			if let Some(ref a) = anim.1
+			if let Some(a) = anim.1
 			{
+				let t = s.create_table().unwrap();
 				if let Some(x) = a.bones.get(&path.to_string())
 				{
-					let t = s.create_table().unwrap();
-					let _ = t.raw_set("time", x.time);
 					let _ = t.raw_set("current", x.current);
 					let tl = s.create_table().unwrap();
 					for f in &x.frames
 					{
-						let frame = s.create_table().unwrap();
-						let _ = frame.raw_set("timestamp", f.timestamp);
-						let _ = frame.raw_set("angleInterpolation", match f.angle.0
-						{
-							Interpolation::Const => "Const",
-							Interpolation::Linear => "Linear",
-							Interpolation::CubicIn => "CubicIn",
-							Interpolation::CubicOut => "CubicOut",
-							Interpolation::CubicInOut => "CubicInOut",
-							Interpolation::SineIn => "SineIn",
-							Interpolation::SineOut => "SineOut",
-							Interpolation::SineInOut => "SineInOut",
-						});
-						let _ = frame.raw_set("angle", f.angle.1);
-						let _ = frame.raw_set("texture", f.texture.clone());
-	
-						let _ = tl.raw_push(frame);
+						let _ = tl.raw_push(f.timestamp);
 					}
 					let _ = t.raw_set("frames", tl);
-					return mlua::Value::Table(t);
 				}
+				else
+				{
+					let _ = t.raw_set("current", 0);
+					let _ = t.raw_set("frames", s.create_table().unwrap());
+				}
+				return mlua::Value::Table(t);
 			}
 		}
-		if args[1] == "jump"
+		else if args[1] == "jump"
 		{
 			if let Some(a) = anim.1
 			{
-				for (_, tl) in &mut a.bones
+				a.time = args[2].parse().unwrap_or(0.0);
+				a.update((*SKELETON).getRoot(), false);
+			}
+		}
+		else if args[1] == "select"
+		{
+			(*SKELETON).setAnimation(args[2].to_string());
+		}
+		else if args[1] == "new"
+		{
+			let a = (*SKELETON).getAnimations();
+			a.insert(format!("anim{}", a.len()), Animation::new());
+		}
+		else if args[1] == "info"
+		{
+			if let Some(a) = (*SKELETON).getAnimations().get(&args[2].to_string())
+			{
+				let t = s.create_table().unwrap();
+				let _ = t.raw_set("name", args[2].to_string());
+				let _ = t.raw_set("repeat", a.repeat);
+				return mlua::Value::Table(t);
+			}
+		}
+		else if args[1] == "name"
+		{
+			if let Some(a) = (*SKELETON).getAnimations().remove(&args[2].to_string())
+			{
+				(*SKELETON).getAnimations().insert(args[3].to_string(), a);
+			}
+			if (*SKELETON).getCurrentAnimation().0 == args[2]
+			{
+				(*SKELETON).setAnimation(args[3].to_string());
+			}
+		}
+		else if args[1] == "recalcDuration"
+		{
+			if let Some(a) = anim.1 { a.calculateDuration(); }
+		}
+		else if args[1] == "frame"
+		{
+			let mut path = args[3].strip_prefix("/root").unwrap_or(args[3]);
+			if let Some(p) = path.strip_prefix("/") { path = p; }
+			if let Some(a) = anim.1
+			{
+				let p = &path.to_string();
+				let tl =
+					if a.bones.contains_key(p) { a.bones.get_mut(p).unwrap() }
+					else
+					{
+						a.bones.insert(p.clone(), Timeline::new());
+						a.bones.get_mut(p).unwrap()
+					};
+				if let Ok(id) = args[4].parse::<usize>()
 				{
-					tl.time = args[2].parse().unwrap_or(0.0);
+					if args[2] == "time"
+					{
+						if let Ok(ts) = args[5].parse::<f32>()
+						{
+							for f in &tl.frames
+							{
+								if f.timestamp == ts { return mlua::Value::Nil; }
+							}
+							tl.frames[id].timestamp = ts;
+							tl.frames.sort_by(|a, b|
+							{
+								if a.timestamp > b.timestamp { Ordering::Greater }
+								else if a.timestamp < b.timestamp { Ordering::Less }
+								else { Ordering::Equal }
+							});
+							for i in 0..tl.frames.len()
+							{
+								if tl.frames[i].timestamp == ts
+								{
+									return mlua::Value::Integer(i as i64)
+								}
+							}
+						}
+					}
+					else if args[2] == "angleValue"
+					{
+						if let Ok(x) = args[5].parse::<f32>()
+						{
+							tl.frames[id].angle.1 = x;
+						}
+					}
+					else if args[2] == "angleFunc"
+					{
+						tl.frames[id].angle.0 = match args[5]
+						{
+							"Linear" => Interpolation::Linear,
+							"CubicIn" => Interpolation::CubicIn,
+							"CubicOut" => Interpolation::CubicOut,
+							"CubicInOut" => Interpolation::CubicInOut,
+							"SineIn" => Interpolation::SineIn,
+							"SineOut" => Interpolation::SineOut,
+							"SineInOut" => Interpolation::SineInOut,
+							_ => Interpolation::Const
+						}
+					}
+					else if args[2] == "texture"
+					{
+						tl.frames[id].texture = args[5].to_string();
+					}
+					else if args[2] == "info"
+					{
+						let t = s.create_table().unwrap();
+						let f = &tl.frames[id];
+						let _ = t.raw_set("ts", f.timestamp);
+						let _ = t.raw_set("angleValue", f.angle.1);
+						let _ = t.raw_set("angleFunc", f.angle.0.to_string());
+						let _ = t.raw_set("texture", f.texture.clone());
+						return mlua::Value::Table(t);
+					}
+					else if args[2] == "delete"
+					{
+						tl.frames.remove(id);
+					}
 				}
-				a.update((*SKELETON).getRoot());
+				else if args[2] == "new"
+				{
+					if tl.frames.len() == 0
+					{
+						let mut f = Frame::new();
+						if let Ok(x) = args[4].parse::<f32>() { f.timestamp = x; }
+						tl.frames.push(f);
+						return mlua::Value::Integer(0);
+					}
+					if let Ok(ts) = args[4].parse::<f32>()
+					{
+						for i in 0..tl.frames.len()
+						{
+							if tl.frames[i].timestamp == ts
+							{
+								return mlua::Value::Integer(i as i64);
+							}
+						}
+						let mut f = Frame::new();
+						f.timestamp = ts;
+						tl.frames.push(f);
+						tl.frames.sort_by(|a, b|
+						{
+							if a.timestamp > b.timestamp { Ordering::Greater }
+							else if a.timestamp < b.timestamp { Ordering::Less }
+							else { Ordering::Equal }
+						});
+						for i in 0..tl.frames.len()
+						{
+							if tl.frames[i].timestamp == ts
+							{
+								return mlua::Value::Integer(i as i64)
+							}
+						}
+					}
+					return mlua::Value::Integer(-1);
+				}
 			}
 		}
 	}
@@ -291,6 +463,7 @@ fn main()
 			(*SKELETON).setAnimation(String::from("idle"));
 		}
 		gl::Enable(gl::BLEND);
+		(*SKELETON).activeAnim = false;
 	}
 
 	while Window::isOpen()

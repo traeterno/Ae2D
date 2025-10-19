@@ -170,6 +170,24 @@ pub enum Interpolation
 	SineIn, SineOut, SineInOut
 }
 
+impl ToString for Interpolation
+{
+	fn to_string(&self) -> String
+	{
+		match self
+		{
+			Interpolation::Const => "Const",
+			Interpolation::Linear => "Linear",
+			Interpolation::CubicIn => "CubicIn",
+			Interpolation::CubicOut => "CubicOut",
+			Interpolation::CubicInOut => "CubicInOut",
+			Interpolation::SineIn => "SineIn",
+			Interpolation::SineOut => "SineOut",
+			Interpolation::SineInOut => "SineInOut",
+		}.to_string()
+	}
+}
+
 pub struct Frame
 {
 	pub timestamp: f32,
@@ -183,7 +201,7 @@ impl Frame
 	{
 		Self
 		{
-			timestamp: 1.0,
+			timestamp: 0.0,
 			angle: (Interpolation::Const, 0.0),
 			texture: String::new()
 		}
@@ -225,7 +243,6 @@ impl Frame
 pub struct Timeline
 {
 	pub frames: Vec<Frame>,
-	pub time: f32,
 	pub current: usize
 }
 
@@ -236,7 +253,6 @@ impl Timeline
 		Self
 		{
 			frames: vec![],
-			time: 0.0,
 			current: 0
 		}
 	}
@@ -254,14 +270,14 @@ impl Timeline
 		tl
 	}
 
-	pub fn update(&mut self, bone: &mut Bone, repeat: bool)
+	pub fn update(&mut self, bone: &mut Bone, repeat: bool, time: f32)
 	{
 		if self.frames.len() == 0 { return; }
-		if self.current == self.frames.len() - 1
+		if self.current == self.frames.len() - 1 && self.frames.len() > 1
 		{
 			if !repeat { return; }
-			self.current = 0;
-			self.time = 0.0;
+			if self.frames[self.current].timestamp > time { self.current = 0; }
+			else { return; }
 		}
 
 		if self.frames.len() == 1
@@ -275,7 +291,7 @@ impl Timeline
 		let start = &self.frames[self.current];
 		let end = &self.frames[self.current + 1];
 
-		let ct = self.time - start.timestamp;
+		let ct = time - start.timestamp;
 		let t = ct / (end.timestamp - start.timestamp);
 		let a = end.angle.1 - start.angle.1;
 
@@ -295,15 +311,16 @@ impl Timeline
 			Interpolation::SineInOut => -((t * std::f32::consts::PI).cos() - 1.0) / 2.0
 		};
 
-		self.time += Window::getDeltaTime();
-		if self.time >= end.timestamp { self.current += 1; }
+		if time >= end.timestamp { self.current += 1; }
 	}
 }
 
 pub struct Animation
 {
 	pub repeat: bool,
-	pub bones: HashMap<String, Timeline>
+	pub bones: HashMap<String, Timeline>,
+	pub time: f32,
+	pub duration: f32
 }
 
 impl Animation
@@ -313,7 +330,9 @@ impl Animation
 		Self
 		{
 			repeat: false,
-			bones: HashMap::new()
+			bones: HashMap::new(),
+			time: 0.0,
+			duration: 0.0
 		}
 	}
 
@@ -338,34 +357,36 @@ impl Animation
 		anim
 	}
 
-	pub fn update(&mut self, root: &mut Bone)
+	pub fn update(&mut self, root: &mut Bone, progress: bool)
 	{
 		for (bone, timeline) in &mut self.bones
 		{
 			let path = bone.split("/").collect::<Vec<&str>>();
 			if let Some(bone) = root.resolvePath(path)
 			{
-				timeline.update(bone, self.repeat);
+				timeline.update(bone, self.repeat, self.time);
 			}
 		}
+		if progress { self.time += Window::getDeltaTime(); }
+		if self.time > self.duration { self.restart(); }
 	}
 
 	pub fn restart(&mut self)
 	{
-		for (_, tl) in &mut self.bones { tl.time = 0.0; }
+		self.time = 0.0;
+		for (_, tl) in &mut self.bones { tl.current = 0; }
 	}
 
-	pub fn calculateDuration(&mut self) -> f32
+	pub fn calculateDuration(&mut self)
 	{
-		let mut d = 0.0f32;
+		self.duration = 0.0;
 		for (_, tl) in &self.bones
 		{
 			if let Some(f) = tl.frames.last()
 			{
-				d = d.max(f.timestamp);
+				self.duration = self.duration.max(f.timestamp);
 			}
 		}
-		d
 	}
 }
 
@@ -506,18 +527,20 @@ impl Skeleton
 	{
 		(self.currentAnim.clone(), self.anims.get_mut(&self.currentAnim))
 	}
+
+	pub fn getAnimations(&mut self) -> &mut HashMap<String, Animation>
+	{
+		&mut self.anims
+	}
 }
 
 impl Drawable for Skeleton
 {
 	fn draw(&mut self)
 	{
-		if self.activeAnim
+		if let Some(a) = self.anims.get_mut(&self.currentAnim)
 		{
-			if let Some(a) = self.anims.get_mut(&self.currentAnim)
-			{
-				a.update(&mut self.root);
-			}
+			a.update(&mut self.root, self.activeAnim);
 		}
 		
 		for i in 0..10
