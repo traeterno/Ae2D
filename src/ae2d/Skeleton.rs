@@ -10,6 +10,7 @@ pub struct Bone
 	pub length: f32,
 	pub texture: String,
 	pub layer: u8,
+	pub scale: f32,
 	children: HashMap<String, Bone>,
 	pos: glam::Vec2,
 	parentAngle: f32,
@@ -27,6 +28,7 @@ impl Bone
 			length: 0.0,
 			texture: String::new(),
 			layer: 0,
+			scale: 1.0,
 			children: HashMap::new(),
 			pos: glam::Vec2::ZERO,
 			parentAngle: 0.0,
@@ -62,8 +64,8 @@ impl Bone
 	{
 		let a = (90.0 + self.parentAngle + self.angle).to_radians();
 		self.pos + glam::vec2(
-			a.cos() * self.length,
-			a.sin() * self.length
+			a.cos() * self.length * self.scale,
+			a.sin() * self.length * self.scale
 		)
 	}
 
@@ -170,6 +172,42 @@ pub enum Interpolation
 	SineIn, SineOut, SineInOut
 }
 
+impl Interpolation
+{
+	pub fn apply(&self, t: f32) -> f32
+	{
+		match self
+		{
+			Interpolation::Const => 0.0,
+			Interpolation::Linear => t,
+			Interpolation::CubicIn => t.powi(3),
+			Interpolation::CubicOut => 1.0 - (t - 1.0).powi(3),
+			Interpolation::CubicInOut =>
+				if t < 0.5 { 4.0 * t.powi(3) }
+				else { 1.0 - (-2.0 * t + 2.0).powi(3) / 2.0 },
+			Interpolation::SineIn => 1.0 - (t * std::f32::consts::PI / 2.0).cos(),
+			Interpolation::SineOut => (t * std::f32::consts::PI / 2.0).sin(),
+			Interpolation::SineInOut => -((t * std::f32::consts::PI).cos() - 1.0) / 2.0
+		}
+	}
+}
+impl From<&str> for Interpolation
+{
+	fn from(value: &str) -> Self
+	{
+		match value
+		{
+			"Linear" => Interpolation::Linear,
+			"CubicIn" => Interpolation::CubicIn,
+			"CubicOut" => Interpolation::CubicOut,
+			"CubicInOut" => Interpolation::CubicInOut,
+			"SineIn" => Interpolation::SineIn,
+			"SineOut" => Interpolation::SineOut,
+			"SineInOut" => Interpolation::SineInOut,
+			_ => Interpolation::Const
+		}
+	}
+}
 impl ToString for Interpolation
 {
 	fn to_string(&self) -> String
@@ -192,6 +230,7 @@ pub struct Frame
 {
 	pub timestamp: f32,
 	pub angle: (Interpolation, f32),
+	pub scale: (Interpolation, f32),
 	pub texture: String
 }
 
@@ -203,6 +242,7 @@ impl Frame
 		{
 			timestamp: 0.0,
 			angle: (Interpolation::Const, 0.0),
+			scale: (Interpolation::Const, 1.0),
 			texture: String::new()
 		}
 	}
@@ -216,24 +256,24 @@ impl Frame
 			if var == "angle"
 			{
 				let a = value.as_str()
-					.unwrap_or("").split(" ")
-					.collect::<Vec<&str>>();
-				let angle = a[1].parse::<f32>().unwrap_or(0.0);
-				f.angle = (match a[0]
-				{
-					"Linear" => Interpolation::Linear,
-					"CubicIn" => Interpolation::CubicIn,
-					"CubicOut" => Interpolation::CubicOut,
-					"CubicInOut" => Interpolation::CubicInOut,
-					"SineIn" => Interpolation::SineIn,
-					"SineOut" => Interpolation::SineOut,
-					"SineInOut" => Interpolation::SineInOut,
-					_ => Interpolation::Const
-				}, angle);
+					.unwrap_or("").split(" ").collect::<Vec<&str>>();
+				f.angle = (
+					Interpolation::from(a[0]),
+					a[1].parse::<f32>().unwrap_or(0.0)
+				);
 			}
 			if var == "texture"
 			{
 				f.texture = value.as_str().unwrap_or("").to_string();
+			}
+			if var == "scale"
+			{
+				let s = value.as_str()
+					.unwrap_or("").split(" ").collect::<Vec<&str>>();
+				f.scale = (
+					Interpolation::from(s[0]),
+					s[1].parse::<f32>().unwrap_or(0.0)
+				);
 			}
 		}
 		f
@@ -284,6 +324,7 @@ impl Timeline
 		{
 			let f = &self.frames[0];
 			bone.angle = f.angle.1;
+			bone.scale = f.scale.1;
 			if !f.texture.is_empty() { bone.texture = f.texture.clone(); }
 			return;
 		}
@@ -294,24 +335,15 @@ impl Timeline
 		let ct = time - start.timestamp;
 		let t = ct / (end.timestamp - start.timestamp);
 		let a = end.angle.1 - start.angle.1;
+		let s = end.scale.1 - start.scale.1;
 
 		if !start.texture.is_empty() { bone.texture = start.texture.clone(); }
 
-		bone.angle = start.angle.1 + a * match start.angle.0
-		{
-			Interpolation::Const => 0.0,
-			Interpolation::Linear => t,
-			Interpolation::CubicIn => t.powi(3),
-			Interpolation::CubicOut => 1.0 - (t - 1.0).powi(3),
-			Interpolation::CubicInOut =>
-				if t < 0.5 { 4.0 * t.powi(3) }
-				else { 1.0 - (-2.0 * t + 2.0).powi(3) / 2.0 },
-			Interpolation::SineIn => 1.0 - (t * std::f32::consts::PI / 2.0).cos(),
-			Interpolation::SineOut => (t * std::f32::consts::PI / 2.0).sin(),
-			Interpolation::SineInOut => -((t * std::f32::consts::PI).cos() - 1.0) / 2.0
-		};
+		bone.angle = start.angle.1 + a * start.angle.0.apply(t);
+		bone.scale = start.scale.1 + s * start.scale.0.apply(t);
 
 		if time >= end.timestamp { self.current += 1; }
+		if time < start.timestamp { self.current -= 1; }
 	}
 }
 
@@ -361,7 +393,8 @@ impl Animation
 	{
 		for (bone, timeline) in &mut self.bones
 		{
-			let path = bone.split("/").collect::<Vec<&str>>();
+			let mut path = bone.split("/").collect::<Vec<&str>>();
+			if path.get(0) == Some(&"") { path.remove(0); }
 			if let Some(bone) = root.resolvePath(path)
 			{
 				timeline.update(bone, self.repeat, self.time);

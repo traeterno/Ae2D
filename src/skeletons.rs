@@ -194,10 +194,10 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 
 					for f in &tl.frames
 					{
-						let angle = f.angle.0.to_string() + " " + &f.angle.1.to_string();
 						let _ = line.insert(&f.timestamp.to_string(), json::object!{
-							angle: angle,
-							texture: f.texture.clone()
+							angle: f.angle.0.to_string() + " " + &f.angle.1.to_string(),
+							texture: f.texture.clone(),
+							scale: f.scale.0.to_string() + " " + &f.scale.1.to_string()
 						});
 					}
 					
@@ -356,22 +356,25 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 					{
 						if let Ok(x) = args[5].parse::<f32>()
 						{
+							println!("angle {x}");
 							tl.frames[id].angle.1 = x;
 						}
 					}
 					else if args[2] == "angleFunc"
 					{
-						tl.frames[id].angle.0 = match args[5]
+						tl.frames[id].angle.0 = Interpolation::from(args[5]);
+					}
+					else if args[2] == "scaleValue"
+					{
+						if let Ok(x) = args[5].parse::<f32>()
 						{
-							"Linear" => Interpolation::Linear,
-							"CubicIn" => Interpolation::CubicIn,
-							"CubicOut" => Interpolation::CubicOut,
-							"CubicInOut" => Interpolation::CubicInOut,
-							"SineIn" => Interpolation::SineIn,
-							"SineOut" => Interpolation::SineOut,
-							"SineInOut" => Interpolation::SineInOut,
-							_ => Interpolation::Const
+							println!("scale {x}");
+							tl.frames[id].scale.1 = x;
 						}
+					}
+					else if args[2] == "scaleFunc"
+					{
+						tl.frames[id].scale.0 = Interpolation::from(args[5]);
 					}
 					else if args[2] == "texture"
 					{
@@ -384,6 +387,8 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 						let _ = t.raw_set("ts", f.timestamp);
 						let _ = t.raw_set("angleValue", f.angle.1);
 						let _ = t.raw_set("angleFunc", f.angle.0.to_string());
+						let _ = t.raw_set("scaleValue", f.scale.1);
+						let _ = t.raw_set("scaleFunc", f.scale.0.to_string());
 						let _ = t.raw_set("texture", f.texture.clone());
 						return mlua::Value::Table(t);
 					}
