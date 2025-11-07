@@ -438,36 +438,45 @@ pub fn network(s: &Lua)
 	let _ = t.raw_set("connect",
 	s.create_function(|_, addr: String|
 	{
-		let net = Window::getNetwork();
-
-		let tcp = TcpStream::connect_timeout(
-			&addr.parse().unwrap(),
-			std::time::Duration::from_secs(5)
-		);
-		if tcp.is_err()
+		std::thread::spawn(move ||
 		{
-			println!("TCP failed: {}", tcp.unwrap_err());
-			return Ok(false);
-		}
-		let tcp = tcp.unwrap();
-		let _ = tcp.set_nodelay(true);
+			let net = Window::getNetwork();
+	
+			let tcp = TcpStream::connect_timeout(
+				&addr.parse().unwrap(),
+				std::time::Duration::from_secs(5)
+			);
+			if tcp.is_err()
+			{
+				println!("TCP failed: {}", tcp.unwrap_err());
+				return;
+			}
+			let tcp = tcp.unwrap();
+			let _ = tcp.set_nodelay(true);
+	
+			let udp = UdpSocket::bind("0.0.0.0:0");
+			if udp.is_err()
+			{
+				println!("UDP failed: {}", udp.unwrap_err());
+				return;
+			}
+			let udp = udp.unwrap();
+			let _ = udp.set_nonblocking(true);
+	
+			net.tcp = Some(tcp);
+			net.udp = Some(udp);
+			net.avatars.clear();
+			for i in 1..=5 { net.avatars.insert(i, Account::default()); }
+			net.state.resize(5, PlayerState::default());
+			std::thread::spawn(Network::tcpThread);
+		});
+		Ok(())
+	}).unwrap());
 
-		let udp = UdpSocket::bind("0.0.0.0:0");
-		if udp.is_err()
-		{
-			println!("UDP failed: {}", udp.unwrap_err());
-			return Ok(false);
-		}
-		let udp = udp.unwrap();
-		let _ = udp.set_nonblocking(true);
-
-		net.tcp = Some(tcp);
-		net.udp = Some(udp);
-		net.avatars.clear();
-		for i in 1..=5 { net.avatars.insert(i, Account::default()); }
-		net.state.resize(5, PlayerState::default());
-		std::thread::spawn(Network::tcpThread);
-		Ok(true)
+	let _ = t.raw_set("isConnected",
+	s.create_function(|_, _: ()|
+	{
+		Ok(Window::getNetwork().tcp.is_some())
 	}).unwrap());
 
 	let _ = t.raw_set("disconnect",
@@ -763,38 +772,37 @@ pub fn network(s: &Lua)
 		Ok(Window::getNetwork().tcp.as_mut().unwrap().peer_addr().unwrap().to_string())
 	}).unwrap());
 	
-	let _ = t.raw_set("findServer",
+	let _ = t.raw_set("searchServer",
 	s.create_function(|_, _: ()|
 	{
 		let s = UdpSocket::bind("0.0.0.0:0").unwrap();
-		let mut buffer = [0u8; 256];
 		let _ = s.set_broadcast(true);
-		let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(1)));
-		for _ in 0..10
+		let _ = s.send_to(&[], "255.255.255.255:26225");
+		let _ = s.set_nonblocking(true);
+		Window::getNetwork().udp = Some(s);
+		Ok(())
+	}).unwrap());
+	
+	let _ = t.raw_set("discoveredServer",
+	s.create_function(|_, _: ()|
+	{
+		if let Some(s) = &mut Window::getNetwork().udp
 		{
-			let _ = s.send_to(&[], "255.255.255.255:26225");
-			match s.recv_from(&mut buffer)
+			let mut buffer = [0u8; 2];
+			if let Ok((s, addr)) = s.recv_from(&mut buffer)
 			{
-				Ok((_, addr)) =>
+				if s != 2
 				{
-					let tcp = u16::from_be_bytes([buffer[0], buffer[1]]);
-					return Ok(addr.ip().to_string() + ":" + &tcp.to_string());
+					println!("Invalid response from server {addr}.");
+					return Ok(String::new());
 				}
-				Err(x) => match x.kind()
-				{
-					std::io::ErrorKind::WouldBlock => {}
-					std::io::ErrorKind::TimedOut => {}
-					_ => println!("Список серверов не был получен: {x:?}")
-				}
+				let tcp = u16::from_be_bytes([buffer[0], buffer[1]]);
+				println!("{buffer:?}");
+				Window::getNetwork().udp = None;
+				return Ok(addr.ip().to_string() + ":" + &tcp.to_string());
 			}
 		}
 		Ok(String::new())
-	}).unwrap());
-
-	let _ = t.raw_set("playersCount",
-	s.create_function(|_, _: ()|
-	{
-		Ok(Window::getNetwork().avatars.len())
 	}).unwrap());
 
 	let _ = t.raw_set("stateReady",
@@ -1321,4 +1329,87 @@ pub fn shaders(script: &Lua)
 	}).unwrap());
 	
 	let _ = script.globals().raw_set("shaders", t);
+}
+
+pub fn skeleton(script: &Lua)
+{
+	let t = script.create_table().unwrap();
+
+	let _ = t.raw_set("loadRig",
+	script.create_function(|s, p: String|
+	{
+		getEntity(s).getSkeleton().loadRig(p);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("loadSL",
+	script.create_function(|s, p: String|
+	{
+		getEntity(s).getSkeleton().loadSL(p);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("loadAL",
+	script.create_function(|s, p: String|
+	{
+		getEntity(s).getSkeleton().loadAL(p);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("update",
+	script.create_function(|s, _: ()|
+	{
+		getEntity(s).getSkeleton().update();
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("draw",
+	script.create_function(|s, _: ()|
+	{
+		Window::getCamera().draw(getEntity(s).getSkeleton());
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("setPosition",
+	script.create_function(|s, p: (f32, f32)|
+	{
+		getEntity(s).getSkeleton().pos = glam::vec2(p.0, p.1);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("getPosition",
+	script.create_function(|s, _: ()|
+	{
+		let p = getEntity(s).getSkeleton().pos;
+		Ok((p.x, p.y))
+	}).unwrap());
+
+	let _ = t.raw_set("setScale",
+	script.create_function(|s, f: f32|
+	{
+		getEntity(s).getSkeleton().setScale(f);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("getScale",
+	script.create_function(|s, _: ()|
+	{
+		Ok(getEntity(s).getSkeleton().scale)
+	}).unwrap());
+
+	let _ = t.raw_set("setAnimation",
+	script.create_function(|s, anim: String|
+	{
+		getEntity(s).getSkeleton().setAnimation(anim);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("setDebug",
+	script.create_function(|s, dbg: bool|
+	{
+		getEntity(s).getSkeleton().debug = dbg;
+		Ok(())
+	}).unwrap());
+
+	let _ = script.globals().raw_set("skeleton", t);
 }

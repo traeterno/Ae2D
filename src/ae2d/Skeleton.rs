@@ -14,6 +14,7 @@ pub struct Bone
 	children: HashMap<String, Bone>,
 	pos: glam::Vec2,
 	parentAngle: f32,
+	parentScale: f32,
 
 	pub highlight: bool
 }
@@ -32,6 +33,7 @@ impl Bone
 			children: HashMap::new(),
 			pos: glam::Vec2::ZERO,
 			parentAngle: 0.0,
+			parentScale: 1.0,
 
 			highlight: false
 		}
@@ -42,10 +44,7 @@ impl Bone
 		let mut s = Self::new();
 		for (var, value) in obj.entries()
 		{
-			if var == "angle" { s.angle = value.as_f32().unwrap() }
 			if var == "length" { s.length = value.as_f32().unwrap(); }
-			if var == "texture" { s.texture = value.as_str().unwrap().to_string(); }
-			if var == "layer" { s.layer = value.as_u8().unwrap(); }
 			if var == "children"
 			{
 				for (id, data) in value.entries()
@@ -64,8 +63,8 @@ impl Bone
 	{
 		let a = (90.0 + self.parentAngle + self.angle).to_radians();
 		self.pos + glam::vec2(
-			a.cos() * self.length * self.scale,
-			a.sin() * self.length * self.scale
+			a.cos() * self.length * self.scale * self.parentScale.abs(),
+			a.sin() * self.length * self.scale * self.parentScale.abs()
 		)
 	}
 
@@ -77,6 +76,15 @@ impl Bone
 		for (_, b) in &mut self.children
 		{
 			b.update(p, self.angle + angle);
+		}
+	}
+
+	pub fn setScale(&mut self, s: f32)
+	{
+		self.parentScale = s;
+		for (_, b) in &mut self.children
+		{
+			b.setScale(s);
 		}
 	}
 
@@ -103,13 +111,10 @@ impl Bone
 	pub fn resolvePath(&mut self, mut path: Vec<&str>) -> Option<&mut Bone>
 	{
 		if path.len() == 0 { return Some(self); }
-		for (name, b) in &mut self.children
+		if let Some(b) = self.children.get_mut(&path[0].to_string())
 		{
-			if name == path[0]
-			{
-				path.remove(0);
-				return b.resolvePath(path);
-			}
+			path.remove(0);
+			return b.resolvePath(path);
 		}
 		None
 	}
@@ -155,12 +160,18 @@ impl Bone
 			let _ = children.insert(name.as_str(), data.toJSON());
 		}
 		json::object!{
-			angle: self.angle,
 			length: self.length,
-			texture: self.texture.clone(),
-			layer: self.layer,
 			children: children
 		}
+	}
+
+	pub fn reset(&mut self)
+	{
+		self.angle = 0.0;
+		self.texture = String::new();
+		self.layer = 0;
+		self.scale = 1.0;
+		for (_, b) in &mut self.children { b.reset(); }
 	}
 }
 
@@ -231,7 +242,8 @@ pub struct Frame
 	pub timestamp: f32,
 	pub angle: (Interpolation, f32),
 	pub scale: (Interpolation, f32),
-	pub texture: String
+	pub texture: String,
+	pub layer: u8
 }
 
 impl Frame
@@ -243,7 +255,8 @@ impl Frame
 			timestamp: 0.0,
 			angle: (Interpolation::Const, 0.0),
 			scale: (Interpolation::Const, 1.0),
-			texture: String::new()
+			texture: String::new(),
+			layer: 255
 		}
 	}
 
@@ -274,6 +287,10 @@ impl Frame
 					Interpolation::from(s[0]),
 					s[1].parse::<f32>().unwrap_or(0.0)
 				);
+			}
+			if var == "layer"
+			{
+				f.layer = value.as_u8().unwrap();
 			}
 		}
 		f
@@ -310,14 +327,12 @@ impl Timeline
 		tl
 	}
 
-	pub fn update(&mut self, bone: &mut Bone, repeat: bool, time: f32)
+	pub fn update(&mut self, bone: &mut Bone, time: f32)
 	{
 		if self.frames.len() == 0 { return; }
 		if self.current == self.frames.len() - 1 && self.frames.len() > 1
 		{
-			if !repeat { return; }
 			if self.frames[self.current].timestamp > time { self.current = 0; }
-			else { return; }
 		}
 
 		if self.frames.len() == 1
@@ -325,6 +340,7 @@ impl Timeline
 			let f = &self.frames[0];
 			bone.angle = f.angle.1;
 			bone.scale = f.scale.1;
+			bone.layer = f.layer;
 			if !f.texture.is_empty() { bone.texture = f.texture.clone(); }
 			return;
 		}
@@ -338,11 +354,12 @@ impl Timeline
 		let s = end.scale.1 - start.scale.1;
 
 		if !start.texture.is_empty() { bone.texture = start.texture.clone(); }
+		if start.layer != 255 { bone.layer = start.layer; }
 
 		bone.angle = start.angle.1 + a * start.angle.0.apply(t);
 		bone.scale = start.scale.1 + s * start.scale.0.apply(t);
 
-		if time >= end.timestamp { self.current += 1; }
+		if time >= end.timestamp && self.current < self.frames.len() - 2 { self.current += 1; }
 		if time < start.timestamp { self.current -= 1; }
 	}
 }
@@ -397,11 +414,15 @@ impl Animation
 			if path.get(0) == Some(&"") { path.remove(0); }
 			if let Some(bone) = root.resolvePath(path)
 			{
-				timeline.update(bone, self.repeat, self.time);
+				timeline.update(bone, self.time);
 			}
 		}
 		if progress { self.time += Window::getDeltaTime(); }
-		if self.time > self.duration { self.restart(); }
+		if self.time > self.duration
+		{
+			self.time = self.duration;
+			if self.repeat { self.restart(); }
+		}
 	}
 
 	pub fn restart(&mut self)
@@ -431,7 +452,9 @@ pub struct Skeleton
 	anims: HashMap<String, Animation>,
 	currentAnim: String,
 	pub debug: bool,
-	pub activeAnim: bool
+	pub activeAnim: bool,
+	pub pos: glam::Vec2,
+	pub scale: f32
 }
 
 impl Skeleton
@@ -446,7 +469,9 @@ impl Skeleton
 			anims: HashMap::new(),
 			currentAnim: String::new(),
 			debug: true,
-			activeAnim: true
+			activeAnim: true,
+			pos: glam::Vec2::ZERO,
+			scale: 1.0
 		}
 	}
 
@@ -534,7 +559,7 @@ impl Skeleton
 		}
 	}
 
-	pub fn update(&mut self) { self.root.update(glam::Vec2::ZERO, 0.0); }
+	pub fn update(&mut self) { self.root.update(self.pos, 0.0); }
 
 	pub fn getRoot(&mut self) -> &mut Bone { &mut self.root }
 
@@ -552,6 +577,7 @@ impl Skeleton
 		if let Some(a) = self.anims.get_mut(&self.currentAnim)
 		{
 			a.restart();
+			self.root.reset();
 		}
 		self.currentAnim = anim;
 	}
@@ -564,6 +590,13 @@ impl Skeleton
 	pub fn getAnimations(&mut self) -> &mut HashMap<String, Animation>
 	{
 		&mut self.anims
+	}
+
+	pub fn setScale(&mut self, s: f32)
+	{
+		self.scale = s;
+		self.visible.getTransformable().setScale(glam::vec2(s, s.abs()));
+		self.root.setScale(s);
 	}
 }
 

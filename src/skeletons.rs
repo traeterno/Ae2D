@@ -61,10 +61,21 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 				{
 					let n = path.pop().unwrap_or_default();
 					if n.is_empty() { return mlua::Value::Nil; }
-					let x = (*SKELETON).getRoot().resolvePath(path).unwrap();
+					let x = (*SKELETON).getRoot().resolvePath(path.clone()).unwrap();
 					let bl = x.getBones();
 					let a = bl.remove(&n.to_string()).unwrap();
 					bl.insert(args[3].to_string(), a);
+					let p = path.join("/");
+					// TODO
+					// when changing bone name, the timeline becomes bound to nothing
+					// change the timeline boundings, delete timelines without bind upon saving
+					for (_, anim) in (*SKELETON).getAnimations()
+					{
+						if let Some(tl) = anim.bones.remove(&(p.clone() + n))
+						{
+							anim.bones.insert(p.clone() + args[3], tl);
+						}
+					}
 				}
 				"angle" => b.angle = args[3].parse().unwrap_or(0.0),
 				"length" => b.length = args[3].parse().unwrap_or(0.0),
@@ -197,7 +208,8 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 						let _ = line.insert(&f.timestamp.to_string(), json::object!{
 							angle: f.angle.0.to_string() + " " + &f.angle.1.to_string(),
 							texture: f.texture.clone(),
-							scale: f.scale.0.to_string() + " " + &f.scale.1.to_string()
+							scale: f.scale.0.to_string() + " " + &f.scale.1.to_string(),
+							layer: f.layer
 						});
 					}
 					
@@ -293,7 +305,7 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 			{
 				let t = s.create_table().unwrap();
 				let _ = t.raw_set("name", args[2].to_string());
-				let _ = t.raw_set("repeat", a.repeat);
+				let _ = t.raw_set("repeating", a.repeat);
 				return mlua::Value::Table(t);
 			}
 		}
@@ -311,6 +323,10 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 		else if args[1] == "recalcDuration"
 		{
 			if let Some(a) = anim.1 { a.calculateDuration(); }
+		}
+		else if args[1] == "repeat"
+		{
+			if let Some(a) = anim.1 { a.repeat = !a.repeat; }
 		}
 		else if args[1] == "frame"
 		{
@@ -380,6 +396,13 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 					{
 						tl.frames[id].texture = args[5].to_string();
 					}
+					else if args[2] == "layer"
+					{
+						if let Ok(l) = args[5].parse()
+						{
+							tl.frames[id].layer = l;
+						}
+					}
 					else if args[2] == "info"
 					{
 						let t = s.create_table().unwrap();
@@ -390,6 +413,7 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 						let _ = t.raw_set("scaleValue", f.scale.1);
 						let _ = t.raw_set("scaleFunc", f.scale.0.to_string());
 						let _ = t.raw_set("texture", f.texture.clone());
+						let _ = t.raw_set("layer", f.layer);
 						return mlua::Value::Table(t);
 					}
 					else if args[2] == "delete"

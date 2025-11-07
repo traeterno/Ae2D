@@ -1,12 +1,13 @@
 use mlua::Lua;
 
-use crate::ae2d::{bind, Camera::Drawable, Sprite::Sprite};
+use crate::ae2d::{bind, Camera::Drawable, Skeleton::Skeleton, Sprite::Sprite};
 
 pub struct Entity
 {
 	script: Lua,
 	id: String,
-	sprite: Sprite
+	sprite: Sprite,
+	skeleton: Skeleton
 }
 
 impl Entity
@@ -17,7 +18,8 @@ impl Entity
 		{
 			script: Lua::new(),
 			id: String::new(),
-			sprite: Sprite::default()
+			sprite: Sprite::default(),
+			skeleton: Skeleton::new()
 		}
 	}
 
@@ -31,6 +33,7 @@ impl Entity
 		bind::window(&ent.script);
 		bind::shapes(&ent.script);
 		bind::shaders(&ent.script);
+		bind::skeleton(&ent.script);
 
 		let _ = ent.script.load(
 			std::fs::read_to_string(
@@ -51,6 +54,11 @@ impl Entity
 	pub fn getSprite(&mut self) -> &mut Sprite
 	{
 		&mut self.sprite
+	}
+	
+	pub fn getSkeleton(&mut self) -> &mut Skeleton
+	{
+		&mut self.skeleton
 	}
 
 	pub fn getScript(&self) -> &mlua::Lua

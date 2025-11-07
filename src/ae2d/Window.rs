@@ -148,23 +148,46 @@ impl Window
 		let (mut window, events) = if fullscreen
 		{
 			vsync = true;
-			i.context.with_primary_monitor(|g, m|
+			i.context.with_primary_monitor(|g, monitor|
 			{
-				let s = m.as_ref().unwrap().get_video_mode().unwrap();
-				size = glam::vec2(s.width as f32, s.height as f32);
-				g.create_window(
-					size.x as u32,
-					size.y as u32,
-					title,
-					glfw::WindowMode::FullScreen(m.unwrap())
-				).unwrap()
+				if let Some(m) = monitor
+				{
+					if let Some(s) = m.get_video_mode()
+					{
+						size = glam::vec2(s.width as f32, s.height as f32);
+						g.window_hint(glfw::WindowHint::RedBits(Some(s.red_bits)));
+						g.window_hint(glfw::WindowHint::GreenBits(Some(s.green_bits)));
+						g.window_hint(glfw::WindowHint::BlueBits(Some(s.blue_bits)));
+						g.window_hint(glfw::WindowHint::RefreshRate(Some(s.refresh_rate)));
+						g.window_hint(glfw::WindowHint::Decorated(false));
+						g.create_window(
+							size.x as u32,
+							size.y as u32,
+							title,
+							// glfw::WindowMode::FullScreen(m)
+							glfw::WindowMode::Windowed
+						).unwrap()
+					}
+					else
+					{
+						g.create_window(size.x as u32, size.y as u32,
+							title,
+							glfw::WindowMode::Windowed
+						).unwrap()
+					}
+				}
+				else
+				{
+					g.create_window(size.x as u32, size.y as u32,
+						title,
+						glfw::WindowMode::Windowed
+					).unwrap()
+				}
 			})
 		}
 		else
 		{
-			i.context.create_window(
-				size.x as u32,
-				size.y as u32,
+			i.context.create_window(size.x as u32, size.y as u32,
 				title,
 				glfw::WindowMode::Windowed
 			).unwrap()

@@ -208,6 +208,7 @@ impl Server
 				ServerMessage::GetPlayerInfo(target, kind) =>
 				{
 					println!("P{id} запросил информацию #{kind} о P{target}.");
+					if !self.clients.contains_key(&target) { continue; }
 					let acc = self.clients.get(&target).unwrap().info.clone();
 					let raw = match kind
 					{
