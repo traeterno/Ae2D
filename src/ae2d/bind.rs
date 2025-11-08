@@ -1201,6 +1201,13 @@ pub fn world(script: &Lua)
 		Ok(())
 	}).unwrap());
 	
+	let _ = t.raw_set("getCamSize",
+	script.create_function(|_, _: ()|
+	{
+		let p = Window::getCamera().getSize();
+		Ok((p.x, p.y))
+	}).unwrap());
+	
 	let _ = t.raw_set("setCamPos",
 	script.create_function(|_, x: (f32, f32)|
 	{
