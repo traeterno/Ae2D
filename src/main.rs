@@ -8,7 +8,6 @@ use ae2d::Window::Window;
 fn main()
 {
 	Window::init("res/global/config.json");
-
 	Window::resetDT();
 	while Window::isOpen()
 	{

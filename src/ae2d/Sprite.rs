@@ -96,8 +96,6 @@ pub struct Sprite
 	currentAnimation: String,
 	frames: Vec<glam::Vec4>,
 	texture: u32,
-	vbo: u32,
-	vao: u32,
 	rect: glam::Vec4,
 	texSize: glam::Vec2,
 	ts: Transformable2D,
@@ -109,31 +107,12 @@ impl Sprite
 {
 	pub fn default() -> Self
 	{
-		let mut vao = 0;
-		let mut vbo = 0;
-		unsafe
-		{
-			gl::GenVertexArrays(1, &mut vao);
-			gl::GenBuffers(1, &mut vbo);
-
-			gl::BindVertexArray(vao);
-			gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-
-			gl::EnableVertexAttribArray(0);
-			gl::VertexAttribPointer(
-				0, 2, gl::FLOAT,
-				gl::FALSE,
-				(2 * size_of::<f32>()) as _,
-				0 as _
-			);
-		}
 		Self
 		{
 			animations: HashMap::new(),
 			currentAnimation: String::new(),
 			frames: vec![],
 			texture: 0,
-			vbo, vao,
 			rect: glam::Vec4::ZERO,
 			texSize: glam::Vec2::ZERO,
 			ts: Transformable2D::new(),
@@ -171,20 +150,6 @@ impl Sprite
 					gl::GetTexLevelParameteriv(
 						gl::TEXTURE_2D, 0,
 						gl::TEXTURE_HEIGHT, &mut h
-					);
-
-					let vertices: [f32; 8] = [
-						0.0, 0.0,
-						1.0, 0.0,
-						1.0, 1.0,
-						0.0, 1.0
-					];
-					
-					gl::BindBuffer(gl::ARRAY_BUFFER, spr.vbo);
-					gl::BufferData(gl::ARRAY_BUFFER,
-						(8 * size_of::<f32>()) as _,
-						vertices.as_ptr() as *const _,
-						gl::STATIC_DRAW
 					);
 				}
 			}
@@ -232,20 +197,6 @@ impl Sprite
 				gl::TEXTURE_2D, 0,
 				gl::TEXTURE_HEIGHT, &mut h
 			);
-
-			let vertices: [f32; 8] = [
-				0.0, 0.0,
-				1.0, 0.0,
-				1.0, 1.0,
-				0.0, 1.0
-			];
-
-			gl::BindBuffer(gl::ARRAY_BUFFER, spr.vbo);
-			gl::BufferData(gl::ARRAY_BUFFER,
-				(8 * size_of::<f32>()) as _,
-				vertices.as_ptr() as *const _,
-				gl::STATIC_DRAW
-			);
 		}
 		spr.texSize = glam::vec2(w as f32, h as f32);
 		spr.frameSize = spr.texSize;
@@ -255,6 +206,7 @@ impl Sprite
 
 	pub fn update(&mut self)
 	{
+		if self.animations.len() == 0 { return; }
 		if let Some(anim) = self.animations.get_mut(&self.currentAnimation)
 		{
 			anim.update();
@@ -359,15 +311,12 @@ impl Drawable for Sprite
 {
 	fn draw(&mut self)
 	{
+		if !Window::getCamera().isVisible(self.getBounds()) { return; }
 		self.update();
-		let s = Window::getShader(String::from("sprite"));
-		s.activate();
-		s.setInt("tex", 0);
+		let s = Window::getCamera().
+			activateShader(String::from("sprite"));
 		s.setVec4("frame",
-			if self.animations.len() == 0
-			{
-				self.rect
-			}
+			if self.animations.len() == 0 { self.rect }
 			else { self.getCurrentFrame() }
 		);
 		s.setVec2("texSize", self.texSize);
@@ -375,22 +324,10 @@ impl Drawable for Sprite
 		s.setVec4("color", self.color);
 		unsafe
 		{
-			gl::BindVertexArray(self.vao);
-			gl::ActiveTexture(gl::TEXTURE0);
+			// gl::ActiveTexture(gl::TEXTURE0);
 			gl::BindTexture(gl::TEXTURE_2D, self.texture);
+			Window::getCamera().universalVAO();
 			gl::DrawArrays(gl::QUADS, 0, 4);
-		}
-	}
-}
-
-impl Drop for Sprite
-{
-	fn drop(&mut self)
-	{
-		unsafe
-		{
-			gl::DeleteBuffers(1, &mut self.vbo);
-			gl::DeleteVertexArrays(1, &mut self.vao);
 		}
 	}
 }

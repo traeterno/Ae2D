@@ -1,3 +1,5 @@
+use crate::ae2d::Shader::Shader;
+
 use super::{Transformable::Transformable2D, Window::Window};
 
 pub trait Drawable
@@ -15,10 +17,10 @@ pub struct Camera
 	vbo: u32,
 	uiProj: glam::Mat4,
 	worldProj: glam::Mat4,
-	shapeVBO: u32,
-	shapeVAO: u32,
 	size: glam::Vec2,
-	useTS: bool
+	useTS: bool,
+	uniVAO: bool,
+	activeShader: String
 }
 
 impl Camera
@@ -35,10 +37,10 @@ impl Camera
 			vbo: 0,
 			uiProj: glam::Mat4::IDENTITY,
 			worldProj: glam::Mat4::IDENTITY,
-			shapeVBO: 0,
-			shapeVAO: 0,
 			size: glam::Vec2::ZERO,
-			useTS: false
+			useTS: false,
+			uniVAO: false,
+			activeShader: String::new()
 		}
 	}
 
@@ -95,51 +97,16 @@ impl Camera
 			);
 			
 			let vertices: [f32; 8] = [
-				-1.0, -1.0,
-				1.0, -1.0,
+				0.0, 0.0,
+				1.0, 0.0,
 				1.0, 1.0,
-				-1.0, 1.0
+				0.0, 1.0
 			];
 
 			gl::BufferData(gl::ARRAY_BUFFER,
 				(8 * size_of::<f32>()) as _,
 				vertices.as_ptr() as _,
 				gl::STATIC_DRAW
-			);
-
-			gl::GenBuffers(1, &mut self.shapeVBO);
-			gl::GenVertexArrays(1, &mut self.shapeVAO);
-
-			gl::BindVertexArray(self.shapeVAO);
-			gl::BindBuffer(gl::ARRAY_BUFFER, self.shapeVBO);
-
-			let vertices: [f32; 24] = [
-				0.0, 0.0, 1.0, 1.0, 1.0, 1.0,
-				1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
-				1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-				0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-			];
-
-			gl::BufferData(gl::ARRAY_BUFFER,
-				(24 * size_of::<f32>()) as _,
-				vertices.as_ptr() as _,
-				gl::STATIC_DRAW
-			);
-
-			gl::EnableVertexAttribArray(0);	
-			gl::VertexAttribPointer(
-				0, 2, gl::FLOAT,
-				gl::FALSE,
-				(6 * size_of::<f32>()) as _,
-				0 as _
-			);
-
-			gl::EnableVertexAttribArray(1);
-			gl::VertexAttribPointer(
-				1, 4, gl::FLOAT,
-				gl::FALSE,
-				(6 * size_of::<f32>()) as _,
-				(2 * size_of::<f32>()) as _
 			);
 		}
 
@@ -149,25 +116,31 @@ impl Camera
 
 	pub fn clear(&mut self)
 	{
+		Window::getProfiler().restart();
 		unsafe
 		{
 			gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo);
 			gl::Clear(gl::COLOR_BUFFER_BIT);
+			gl::Finish();
 		}
+		Window::getProfiler().save("clear".to_string());
 	}
 
 	pub fn display(&mut self)
 	{
+		Window::getProfiler().restart();
 		unsafe
 		{
 			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-			let s = Window::getShader(String::from("camera"));
-			s.activate();
+			let s = Window::getCamera()
+				.activateShader(String::from("camera"));
 			s.setInt("tex", 0);
 			gl::BindTexture(gl::TEXTURE_2D, self.tex);
 			gl::BindVertexArray(self.vao);
 			gl::DrawArrays(gl::TRIANGLE_FAN, 0, 4);
+			gl::Finish();
 		}
+		Window::getProfiler().save("render".to_string());
 	}
 
 	pub fn toggleTransform(&mut self, enable: bool)
@@ -218,14 +191,17 @@ impl Camera
 		obj.draw();
 	}
 
-	pub fn drawShape(&mut self)
+	pub fn universalVAO(&mut self)
 	{
-		unsafe
-		{
-			gl::BindVertexArray(self.shapeVAO);
-			gl::DrawArrays(gl::QUADS, 0, 4);
-			gl::BindVertexArray(0);
-		}
+		if self.uniVAO { return; }
+		self.uniVAO = true;
+		unsafe { gl::BindVertexArray(self.vao); }
+	}
+
+	pub fn bindVAO(&mut self, vao: u32)
+	{
+		self.uniVAO = false;
+		unsafe { gl::BindVertexArray(vao); }
 	}
 
 	pub fn getTransformable(&mut self) -> &mut Transformable2D
@@ -251,6 +227,35 @@ impl Camera
 		
 		let min = p1.min(p2).min(p3).min(p4);
 		let max = p1.max(p2).max(p3).max(p4);
-		glam::vec4(min.x, min.y, max.x - min.x, max.y - min.y)
+		glam::vec4(-min.x, -min.y, max.x - min.x, max.y - min.y)
+	}
+
+	pub fn activateShader(&mut self, shader: String) -> &'static Shader
+	{
+		let s = Window::getShader(shader.clone());
+		if self.activeShader != shader
+		{
+			s.activate();
+			self.activeShader = shader;
+		}
+		s
+	}
+
+	pub fn isVisible(&mut self, h2: glam::Vec4) -> bool
+	{
+		let h1 = if self.useTS { self.getBounds() }
+		else
+		{
+			glam::vec4(0.0, 0.0,
+				Window::getSize().0 as f32,
+				Window::getSize().1 as f32
+			)
+		};
+		let il = h1.x.max(h2.x);
+		let it = h1.y.max(h2.y);
+		let ir = (h1.x + h1.z).min(h2.x + h2.z);
+		let ib = (h1.y + h1.w).min(h2.y + h2.w);
+
+		(il < ir) && (it < ib)
 	}
 }

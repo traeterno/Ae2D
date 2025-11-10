@@ -1,3 +1,16 @@
+/*
+	TODO
+	Remove usage of sprite
+	Build separate vbo/vao pair for each skeleton
+
+	FIRST OPTION
+		VBO = normalized-quad * bones.len()
+		uniform arrays for transforms and uvs
+	
+	SECOND OPTION
+		VBO builds dynamically each frame, contains ready vertices and uvs
+*/
+
 use std::collections::HashMap;
 
 use crate::ae2d::{Camera::Drawable, Shapes, Sprite::Sprite, Window::Window};
@@ -613,6 +626,6 @@ impl Drawable for Skeleton
 		{
 			self.root.draw(&mut self.visible, &self.sprites, i);
 		}
-		if self.debug { self.root.drawDebug(); }
+		// if self.debug { self.root.drawDebug(); }
 	}
 }

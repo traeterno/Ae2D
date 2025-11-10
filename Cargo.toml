@@ -17,13 +17,13 @@ name = "se"
 path = "src/skeletons.rs"
 
 [dependencies]
-gl = "*"
-glam = "*"
-stb_image = "*"
-cpal = "*"
-json = "*"
-base64 = "*"
-sha1_smol = "*"
+gl = "0.14.0"
+glam = "0.29.3"
+stb_image = "0.3.0"
+cpal = "0.16"
+json = "0.12.4"
+base64 = "0.22.1"
+sha1_smol = "1.0.1"
 
 [dependencies.glfw]
 version = "0.59.0"
@@ -31,5 +31,5 @@ default-features = false
 features = [ "raw-window-handle-v0-5" ]
 
 [dependencies.mlua]
-version = "*"
+version = "0.10.5"
 features = ["lua54", "vendored"]

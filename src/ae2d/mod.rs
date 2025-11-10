@@ -12,3 +12,4 @@ pub mod World;
 pub mod Entity;
 pub mod Skeleton;
 pub mod Shapes;
+pub mod Profiler;

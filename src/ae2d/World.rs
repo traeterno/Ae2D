@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use mlua::Lua;
 
-use crate::ae2d::{bind, Camera::Drawable, Entity::Entity, Programmable::Programmable};
+use crate::ae2d::{Camera::Drawable, Entity::Entity, Programmable::Programmable, Window::Window, bind};
 
 pub struct World
 {
 	name: String,
 	script: Lua,
-	ents: Vec<Entity>,
+	ents: HashMap<String, Entity>,
 	prog: Programmable,
 	triggers: HashMap<String, (String, glam::Vec4)>,
 	layers: Vec<(Vec<String>, Vec<String>)>,
@@ -23,7 +23,7 @@ impl World
 		{
 			name: String::new(),
 			script: Lua::new(),
-			ents: vec![],
+			ents: HashMap::new(),
 			prog: Programmable::new(),
 			triggers: HashMap::new(),
 			layers: vec![],
@@ -61,53 +61,45 @@ impl World
 
 	pub fn update(&mut self)
 	{
+		Window::getProfiler().restart();
 		if self.init
 		{
 			bind::execFunc(&self.script, "Init");
 			self.init = false;
 		}
-		for l in &mut self.layers { *l = (vec![], vec![]); }
-		bind::execFunc(&self.script, "Update");
-		for mut i in 0..self.ents.len() as i16
+		for l in &mut self.layers
 		{
-			let (layer, opaque) = self.ents[i as usize].update();
-			if layer == 255 { i -= 1; self.ents.remove((i + 1) as usize); continue; }
-			if opaque
-			{
-				self.layers[layer as usize].0.push(self.ents[i as usize].getID());
-			}
-			else
-			{
-				self.layers[layer as usize].1.push(self.ents[i as usize].getID());
-			}
+			*l = (vec![], vec![]);
 		}
+		bind::execFunc(&self.script, "Update");
+		for (_, ent) in &mut self.ents
+		{
+			let (layer, opaque) = ent.update();
+			if layer == 255 { continue; }
+			if opaque { self.layers[layer as usize].0.push(ent.getID()); }
+			else { self.layers[layer as usize].1.push(ent.getID()); }
+		}
+		Window::getProfiler().save("worldUpdate".to_string());
 	}
 
 	pub fn getEntity(&mut self, id: String) -> &mut Entity
 	{
-		for e in &mut self.ents
+		if let Some(e) = self.ents.get_mut(&id)
 		{
-			if e.getID() == id { return e; }
+			return e;
 		}
 		panic!("Entity '{id}' not found");
 	}
 
 	pub fn spawn(&mut self, id: String, path: String, vars: json::JsonValue)
 	{
-		self.ents.push(Entity::load(id, path));
-		self.ents.last().unwrap().init(vars);
+		self.ents.insert(id.clone(), Entity::load(id.clone(), path));
+		self.ents.get_mut(&id).unwrap().init(vars);
 	}
 
 	pub fn kill(&mut self, id: String)
 	{
-		for i in 0..self.ents.len()
-		{
-			if self.ents[i].getID() == id
-			{
-				self.ents.remove(i);
-				return;
-			}
-		}
+		self.ents.remove(&id);
 	}
 
 	pub fn createTrigger(&mut self, id: String, name: String, hitbox: glam::Vec4)
@@ -145,34 +137,34 @@ impl Drawable for World
 {
 	fn draw(&mut self)
 	{
+		Window::getProfiler().restart();
 		for layer in 0..self.layers.len()
 		{
-			unsafe
-			{
-				gl::Enable(gl::STENCIL_TEST);
-				gl::Clear(gl::STENCIL_BUFFER_BIT);
-				gl::Disable(gl::BLEND);
-			}
 			let opaque = self.layers[layer].0.len();
-			for i in 0..opaque
+			if opaque > 0
 			{
-				self.getEntity(self.layers[layer].0[opaque - 1 - i].clone()).draw();
-			}
-			unsafe
-			{
-				gl::Enable(gl::BLEND);
-				gl::Disable(gl::STENCIL_TEST);
+				unsafe
+				{
+					gl::Enable(gl::STENCIL_TEST);
+					gl::Clear(gl::STENCIL_BUFFER_BIT);
+					gl::Disable(gl::BLEND);
+				}
+				for i in 1..=opaque
+				{
+					self.getEntity(self.layers[layer].0[opaque - i].clone()).draw();
+				}
 			}
 			let transparent = self.layers[layer].1.len();
-			for i in 0..transparent
+			if transparent > 0
 			{
-				self.getEntity(self.layers[layer].1[i].clone()).draw();
+				unsafe { gl::Enable(gl::BLEND); gl::Disable(gl::STENCIL_TEST); }
+				for i in 0..transparent
+				{
+					self.getEntity(self.layers[layer].1[i].clone()).draw();
+				}
 			}
 		}
-		unsafe
-		{
-			gl::Finish();
-			gl::Enable(gl::BLEND);
-		}
+		unsafe { gl::Enable(gl::BLEND); gl::Finish(); }
+		Window::getProfiler().save("worldDraw".to_string());
 	}
 }

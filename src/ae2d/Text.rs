@@ -274,14 +274,14 @@ impl Drawable for Text
 	{
 		if self.update { self.reload(); }
 		if self.vertices == 0 { return; }
-		let s = Window::getShader(String::from("text"));
+		let s = Window::getCamera().activateShader(String::from("text"));
 		s.activate();
 		s.setInt("tex", 0);
 		s.setMat4("model", self.ts.getMatrix());
 		s.setVec4("clr", self.color);
 		unsafe
 		{
-			gl::BindVertexArray(self.vao);
+			Window::getCamera().bindVAO(self.vao);
 			gl::ActiveTexture(gl::TEXTURE0);
 			gl::BindTexture(gl::TEXTURE_2D, self.font.texture);
 			gl::DrawArrays(gl::QUADS,

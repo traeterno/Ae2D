@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use glfw::Context;
 
-use crate::ae2d::{Network::Network, Shader::Shader, World::World};
+use crate::ae2d::{Network::Network, Profiler::Profiler, Shader::Shader, World::World};
 
 use super::{Camera::Camera, Programmable::{Programmable, Variable}, UI::UI};
 
@@ -24,7 +24,8 @@ pub struct Window
 	net: Network,
 	world: World,
 	shaders: HashMap<String, Shader>,
-	server: Option<std::process::Child>
+	server: Option<std::process::Child>,
+        profiler: Profiler
 }
 
 impl Window
@@ -51,7 +52,8 @@ impl Window
 			shaders: HashMap::new(),
 			server: None,
 			scrollEvent: None,
-			dndEvent: None
+			dndEvent: None,
+                        profiler: Profiler::new()
 		}
 	}
 
@@ -76,11 +78,12 @@ impl Window
 		
 		let i = Window::getInstance();
 
+		i.context.window_hint(glfw::WindowHint::ContextVersion(2, 1));
+
 		let mut title = "Ae2D";
 		let mut size = glam::vec2(1280.0, 720.0);
 		let mut vsync = true;
 		let mut fullscreen = false;
-		let mut colors = HashMap::new();
 		let mut uiPath = "";
 
 		for (name, section) in cfg.entries()
@@ -114,19 +117,6 @@ impl Window
 					}
 				}
 			}
-			if name == "colors"
-			{
-				for (clr, value) in section.entries()
-				{
-					let mut c = value.members();
-					colors.insert(clr, glam::vec4(
-						c.nth(0).unwrap().as_f32().unwrap(),
-						c.nth(0).unwrap().as_f32().unwrap(),
-						c.nth(0).unwrap().as_f32().unwrap(),
-						c.nth(0).unwrap().as_f32().unwrap()
-					));
-				}
-			}
 			if name == "custom"
 			{
 				for (name, value) in section.entries()
@@ -145,7 +135,7 @@ impl Window
 			}
 		}
 
-		let (mut window, events) = if fullscreen
+		if fullscreen
 		{
 			vsync = true;
 			i.context.with_primary_monitor(|g, monitor|
@@ -158,40 +148,16 @@ impl Window
 						g.window_hint(glfw::WindowHint::RedBits(Some(s.red_bits)));
 						g.window_hint(glfw::WindowHint::GreenBits(Some(s.green_bits)));
 						g.window_hint(glfw::WindowHint::BlueBits(Some(s.blue_bits)));
-						g.window_hint(glfw::WindowHint::RefreshRate(Some(s.refresh_rate)));
 						g.window_hint(glfw::WindowHint::Decorated(false));
-						g.create_window(
-							size.x as u32,
-							size.y as u32,
-							title,
-							// glfw::WindowMode::FullScreen(m)
-							glfw::WindowMode::Windowed
-						).unwrap()
 					}
-					else
-					{
-						g.create_window(size.x as u32, size.y as u32,
-							title,
-							glfw::WindowMode::Windowed
-						).unwrap()
-					}
-				}
-				else
-				{
-					g.create_window(size.x as u32, size.y as u32,
-						title,
-						glfw::WindowMode::Windowed
-					).unwrap()
 				}
 			})
 		}
-		else
-		{
+		let (mut window, events) =
 			i.context.create_window(size.x as u32, size.y as u32,
-				title,
-				glfw::WindowMode::Windowed
-			).unwrap()
-		};
+			title,
+			glfw::WindowMode::Windowed
+		).unwrap();
 
 		window.set_mouse_button_polling(true);
 		window.set_key_polling(true);
@@ -220,14 +186,36 @@ impl Window
 			gl::StencilOp(gl::KEEP, gl::REPLACE, gl::REPLACE);
 			gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
 			gl::Viewport(0, 0, size.x as i32, size.y as i32);
+
+			println!("{}", Self::getGLString(gl::VERSION));
+			println!("{}", Self::getGLString(gl::VENDOR));
+			println!("{}", Self::getGLString(gl::RENDERER));
 		}
 
 		i.ui.load(uiPath);
 	}
 
+	pub fn getGLString(s: gl::types::GLenum) -> String
+	{
+		unsafe
+		{
+			let v = gl::GetString(s);
+			let mut size: isize = 0;
+			let mut vector: Vec<u8> = vec![];
+			while v.offset(size).read() != 0
+			{
+				vector.push(v.offset(size).read());
+				size += 1;
+			}
+			String::from_utf8(vector).unwrap()
+		}
+	}
+
 	pub fn update()
 	{
 		let i = Window::getInstance();
+
+		i.profiler.restart();
 
 		i.mouseEvent = None;
 		i.keyEvent = None;
@@ -287,6 +275,8 @@ impl Window
 			}
 		}
 
+		i.profiler.save("winUpdate".to_string());
+
 		i.ui.updateReload();
 		i.world.update();
 		i.ui.update();
@@ -304,7 +294,9 @@ impl Window
 		i.cam.toggleTransform(false);
 		i.cam.display();
 		i.cam.draw(&mut i.ui);
+		i.profiler.restart();
 		i.window.as_mut().unwrap().swap_buffers();
+		i.profiler.save("swap".to_string());
 	}
 
 	pub fn display()
@@ -487,7 +479,16 @@ impl Window
 				tex.insert(path, t);
 				t
 			},
-			_ => 0
+			stb_image::image::LoadResult::ImageF32(_) =>
+			{
+				println!("Failed to load texture from {path}: unable to read F32 type.");
+				0
+			}
+			stb_image::image::LoadResult::Error(s) =>
+			{
+				println!("Error on reading texture from {path}:\n{s}");
+				0
+			}
 		}
 	}
 
@@ -536,10 +537,11 @@ impl Window
 	pub fn launchServer()
 	{
 		let i = Window::getInstance();
+		let ext = if std::env::consts::OS == "windows" { ".exe" } else { "" };
 		let path = if cfg!(debug_assertions)
 		{
-			"./target/debug/envell.exe"
-		} else { "./res/system/server.exe" };
+			String::from("./target/debug/envell") + ext
+		} else { String::from("./res/system/server") + ext };
 		i.server = Some(
 			std::process::Command::new(path).arg("silent").spawn().unwrap()
 		);
@@ -553,4 +555,9 @@ impl Window
 			pos.y as f64
 		);
 	}
+
+        pub fn getProfiler() -> &'static mut Profiler
+        {
+            &mut Self::getInstance().profiler
+        }
 }

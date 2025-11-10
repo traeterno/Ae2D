@@ -1,5 +1,7 @@
 use mlua::{Function, Lua, Value};
 
+use crate::ae2d::Window::Window;
+
 use super::{bind, Camera::Drawable, Sprite::Sprite, Text::Text};
 
 pub struct Object
@@ -38,6 +40,7 @@ impl Object
 		bind::world(&obj.script);
 		bind::network(&obj.script);
 		bind::shapes(&obj.script);
+		bind::profiler(&obj.script);
 
 		let mut f = None;
 
@@ -219,6 +222,7 @@ impl UI
 
 	pub fn update(&mut self)
 	{
+		Window::getProfiler().restart();
 		for obj in &self.objects
 		{
 			let name = &obj.name;
@@ -235,6 +239,7 @@ impl UI
 				}
 			}
 		}
+		Window::getProfiler().save("uiUpdate".to_string());
 	}
 
 	pub fn requestLoad(&mut self, path: String)
@@ -269,6 +274,7 @@ impl Drawable for UI
 {
 	fn draw(&mut self)
 	{
+		Window::getProfiler().restart();
 		for obj in &self.objects
 		{
 			let name = &obj.name;
@@ -285,5 +291,7 @@ impl Drawable for UI
 				}
 			}
 		}
+		unsafe { gl::Finish(); }
+		Window::getProfiler().save("uiDraw".to_string());
 	}
 }

@@ -226,8 +226,7 @@ pub fn sprite(s: &Lua)
 	s.create_function(|s, shader: String|
 	{
 		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		let s = Window::getShader(shader);
-		s.activate();
+		let s = Window::getCamera().activateShader(shader);
 		s.setMat4("model", spr.getTransformable().getMatrix());
 		Ok(())
 	}).unwrap());
@@ -1267,8 +1266,7 @@ pub fn shapes(script: &Lua)
 	let _ = t.raw_set("rect",
 	script.create_function(|_, x: (f32, f32, f32, f32, u8, u8, u8, u8)|
 	{
-		let s = Window::getShader(String::from("shape"));
-		s.activate();
+		let s = Window::getCamera().activateShader(String::from("shape"));
 		let mut ts = Transformable2D::new();
 		ts.setPosition(glam::vec2(x.0, x.1));
 		s.setVec2("size", glam::vec2(x.2, x.3));
@@ -1279,14 +1277,16 @@ pub fn shapes(script: &Lua)
 			x.6 as f32 / 255.0,
 			x.7 as f32 / 255.0
 		));
-		Window::getCamera().drawShape();
+		Window::getCamera().universalVAO();
+		unsafe { gl::DrawArrays(gl::QUADS, 0, 4); }
 		Ok(())
 	}).unwrap());
 
 	let _ = t.raw_set("custom",
 	script.create_function(|_, _: ()|
 	{
-		Window::getCamera().drawShape();
+		Window::getCamera().universalVAO();
+		unsafe { gl::DrawArrays(gl::QUADS, 0, 4); }
 		Ok(())
 	}).unwrap());
 
@@ -1300,21 +1300,22 @@ pub fn shaders(script: &Lua)
 	let _ = t.raw_set("bind",
 	script.create_function(|_, name: String|
 	{
-		Window::getShader(name).activate();
+		Window::getCamera().activateShader(name);
 		Ok(())
 	}).unwrap());
 	
 	let _ = t.raw_set("setInt",
 	script.create_function(|_, x: (String, String, i32)|
 	{
-		Window::getShader(x.0.clone()).setInt(&x.1, x.2);
+		Window::getCamera().activateShader(x.0.clone())
+			.setInt(&x.1, x.2);
 		Ok(())
 	}).unwrap());
 	
 	let _ = t.raw_set("setVec2",
 	script.create_function(|_, x: (String, String, f32, f32)|
 	{
-		Window::getShader(x.0.clone())
+		Window::getCamera().activateShader(x.0.clone())
 			.setVec2(&x.1, glam::vec2(x.2, x.3));
 		Ok(())
 	}).unwrap());
@@ -1322,7 +1323,7 @@ pub fn shaders(script: &Lua)
 	let _ = t.raw_set("setVec3",
 	script.create_function(|_, x: (String, String, f32, f32, f32)|
 	{
-		Window::getShader(x.0.clone())
+		Window::getCamera().activateShader(x.0.clone())
 			.setVec3(&x.1, glam::vec3(x.2, x.3, x.4));
 		Ok(())
 	}).unwrap());
@@ -1330,7 +1331,7 @@ pub fn shaders(script: &Lua)
 	let _ = t.raw_set("setVec4",
 	script.create_function(|_, x: (String, String, f32, f32, f32, f32)|
 	{
-		Window::getShader(x.0.clone())
+		Window::getCamera().activateShader(x.0.clone())
 			.setVec4(&x.1, glam::vec4(x.2, x.3, x.4, x.5));
 		Ok(())
 	}).unwrap());
@@ -1419,4 +1420,29 @@ pub fn skeleton(script: &Lua)
 	}).unwrap());
 
 	let _ = script.globals().raw_set("skeleton", t);
+}
+
+pub fn profiler(script: &Lua)
+{
+    let t = script.create_table().unwrap();
+
+    let _ = t.raw_set("restart",
+    script.create_function(|_, _: ()|
+    {
+        Window::getProfiler().restart();
+        Ok(())
+    }).unwrap());
+
+    let _ = t.raw_set("save",
+    script.create_function(|_, name: String|
+    {
+        Ok(Window::getProfiler().save(name))
+    }).unwrap());
+
+    let _ = t.raw_set("get",
+    script.create_function(|_, name: String|
+    {
+        Ok(Window::getProfiler().get(name))
+    }).unwrap());
+    let _ = script.globals().set("profiler", t);
 }
