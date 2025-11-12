@@ -2,7 +2,7 @@
 
 use std::{cmp::Ordering, env, sync::LazyLock};
 
-use crate::ae2d::{Shapes, Skeleton::{Animation, Bone, Frame, Interpolation, Skeleton, Timeline}, Window::Window};
+use crate::ae2d::{Skeleton::{Animation, Bone, Frame, Interpolation, Skeleton, Timeline}, Window::Window};
 
 mod ae2d;
 mod server;
@@ -127,14 +127,14 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 			"new" =>
 			{ 
 				sl.insert(format!("sprite{}", sl.len()),
-					(glam::Vec4::ZERO, glam::Vec2::ZERO)
+					(glam::Vec4::ZERO, glam::Vec2::ZERO, glam::Vec2::ZERO)
 				);
 			}
 			"delete" =>
 			{
 				sl.remove(&args[2].to_string());
 			}
-			"info" => if let Some((r, o)) = spr
+			"info" => if let Some((r, o, _)) = spr
 			{
 				let t = s.create_table().unwrap();
 				let _ = t.raw_set("rect", [r.x, r.y, r.z, r.w]);
@@ -147,17 +147,17 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 				for (n, _) in sl { let _ = t.raw_push(n.clone()); }
 				return mlua::Value::Table(t);
 			}
-			"name" => if let Some((r, o)) = spr.cloned()
+			"name" => if let Some(x) = spr.cloned()
 			{
-				sl.insert(args[3].to_string(), (r, o));
+				sl.insert(args[3].to_string(), x);
 				sl.remove(&args[2].to_string());
 			}
-			"ox" => if let Some((_, o)) = spr { o.x = args[3].parse().unwrap(); }
-			"oy" => if let Some((_, o)) = spr { o.y = args[3].parse().unwrap(); }
-			"rx" => if let Some((r, _)) = spr { r.x = args[3].parse().unwrap(); }
-			"ry" => if let Some((r, _)) = spr { r.y = args[3].parse().unwrap(); }
-			"rw" => if let Some((r, _)) = spr { r.z = args[3].parse().unwrap(); }
-			"rh" => if let Some((r, _)) = spr { r.w = args[3].parse().unwrap(); }
+			"ox" => if let Some((_, o, _)) = spr { o.x = args[3].parse().unwrap(); }
+			"oy" => if let Some((_, o, _)) = spr { o.y = args[3].parse().unwrap(); }
+			"rx" => if let Some((r, _, _)) = spr { r.x = args[3].parse().unwrap(); }
+			"ry" => if let Some((r, _, _)) = spr { r.y = args[3].parse().unwrap(); }
+			"rw" => if let Some((r, _, _)) = spr { r.z = args[3].parse().unwrap(); }
+			"rh" => if let Some((r, _, _)) = spr { r.w = args[3].parse().unwrap(); }
 			_ => {}
 		}
 	}
@@ -181,7 +181,7 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 		if args[1] == "sl"
 		{
 			let mut s = json::object!{};
-			for (name, (r, o)) in (*SKELETON).getSL()
+			for (name, (r, o, _)) in (*SKELETON).getSL()
 			{
 				let _ = s.insert(&name, json::object!{
 					rect: [r.x, r.y, r.z, r.w],
@@ -223,10 +223,6 @@ unsafe fn exec(s: &mlua::Lua, cmd: String) -> mlua::Value
 			}
 		}
 		let _ = std::fs::write(args[2], json::stringify(doc));
-	}
-	if args[0] == "debug"
-	{
-		(*SKELETON).debug = args[1].parse().unwrap_or(false);
 	}
 	if args[0] == "anim"
 	{
@@ -511,18 +507,18 @@ fn main()
 		
 		cam.clear();
 		cam.toggleTransform(true);
-		Shapes::line(
-			glam::vec2(-1000.0, 0.0),
-			glam::vec2(1000.0, 0.0),
-			glam::Vec4::splat(1.0),
-			glam::Vec4::splat(1.0)
-		);
-		Shapes::line(
-			glam::vec2(0.0, -1000.0),
-			glam::vec2(0.0, 1000.0),
-			glam::Vec4::splat(1.0),
-			glam::Vec4::splat(1.0)
-		);
+		// Shapes::line(
+		// 	glam::vec2(-1000.0, 0.0),
+		// 	glam::vec2(1000.0, 0.0),
+		// 	glam::Vec4::splat(1.0),
+		// 	glam::Vec4::splat(1.0)
+		// );
+		// Shapes::line(
+		// 	glam::vec2(0.0, -1000.0),
+		// 	glam::vec2(0.0, 1000.0),
+		// 	glam::Vec4::splat(1.0),
+		// 	glam::Vec4::splat(1.0)
+		// );
 		unsafe
 		{
 			(*SKELETON).update();

@@ -1381,41 +1381,36 @@ pub fn skeleton(script: &Lua)
 	let _ = t.raw_set("setPosition",
 	script.create_function(|s, p: (f32, f32)|
 	{
-		getEntity(s).getSkeleton().pos = glam::vec2(p.0, p.1);
+		getEntity(s).getSkeleton().getTransformable()
+			.setPosition(glam::vec2(p.0, p.1));
 		Ok(())
 	}).unwrap());
 
 	let _ = t.raw_set("getPosition",
 	script.create_function(|s, _: ()|
 	{
-		let p = getEntity(s).getSkeleton().pos;
+		let p = getEntity(s).getSkeleton().getTransformable().getPosition();
 		Ok((p.x, p.y))
 	}).unwrap());
 
 	let _ = t.raw_set("setScale",
 	script.create_function(|s, f: f32|
 	{
-		getEntity(s).getSkeleton().setScale(f);
+		getEntity(s).getSkeleton().getTransformable()
+			.setScale(glam::Vec2::splat(f));
 		Ok(())
 	}).unwrap());
 
 	let _ = t.raw_set("getScale",
 	script.create_function(|s, _: ()|
 	{
-		Ok(getEntity(s).getSkeleton().scale)
+		Ok(getEntity(s).getSkeleton().getTransformable().getScale().x)
 	}).unwrap());
 
 	let _ = t.raw_set("setAnimation",
 	script.create_function(|s, anim: String|
 	{
 		getEntity(s).getSkeleton().setAnimation(anim);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("setDebug",
-	script.create_function(|s, dbg: bool|
-	{
-		getEntity(s).getSkeleton().debug = dbg;
 		Ok(())
 	}).unwrap());
 

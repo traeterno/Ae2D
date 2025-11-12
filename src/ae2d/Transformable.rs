@@ -54,4 +54,12 @@ impl Transformable2D
 
 	pub fn setOrigin(&mut self, origin: glam::Vec2) { self.origin = origin; self.reloadModel = true; }
 	pub fn getOrigin(&mut self) -> glam::Vec2 { self.origin }
+
+	pub fn quick(pos: glam::Vec2, angle: f32, scale: glam::Vec2, origin: glam::Vec2) -> glam::Mat4
+	{
+		glam::Mat4::from_translation(glam::vec3(pos.x, pos.y, 0.0))
+			.mul_mat4(&glam::Mat4::from_rotation_z(angle.to_radians()))
+			.mul_mat4(&glam::Mat4::from_scale(glam::vec3(scale.x, scale.y, 1.0)))
+			.mul_mat4(&glam::Mat4::from_translation(-glam::vec3(origin.x, origin.y, 0.0)))
+	}
 }

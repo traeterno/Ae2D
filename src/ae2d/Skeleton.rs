@@ -13,9 +13,11 @@
 
 use std::collections::HashMap;
 
-use crate::ae2d::{Camera::Drawable, Shapes, Sprite::Sprite, Window::Window};
+use glam::Vec4Swizzles;
 
-pub type SpriteList = HashMap<String, (glam::Vec4, glam::Vec2)>;
+use crate::ae2d::{Camera::Drawable, Transformable::Transformable2D, Window::Window};
+
+pub type SpriteList = HashMap<String, (glam::Vec4, glam::Vec2, glam::Vec2)>;
 
 pub struct Bone
 {
@@ -27,7 +29,6 @@ pub struct Bone
 	children: HashMap<String, Bone>,
 	pos: glam::Vec2,
 	parentAngle: f32,
-	parentScale: f32,
 
 	pub highlight: bool
 }
@@ -46,7 +47,6 @@ impl Bone
 			children: HashMap::new(),
 			pos: glam::Vec2::ZERO,
 			parentAngle: 0.0,
-			parentScale: 1.0,
 
 			highlight: false
 		}
@@ -76,8 +76,8 @@ impl Bone
 	{
 		let a = (90.0 + self.parentAngle + self.angle).to_radians();
 		self.pos + glam::vec2(
-			a.cos() * self.length * self.scale * self.parentScale.abs(),
-			a.sin() * self.length * self.scale * self.parentScale.abs()
+			a.cos() * self.length * self.scale,
+			a.sin() * self.length * self.scale
 		)
 	}
 
@@ -89,15 +89,6 @@ impl Bone
 		for (_, b) in &mut self.children
 		{
 			b.update(p, self.angle + angle);
-		}
-	}
-
-	pub fn setScale(&mut self, s: f32)
-	{
-		self.parentScale = s;
-		for (_, b) in &mut self.children
-		{
-			b.setScale(s);
 		}
 	}
 
@@ -132,37 +123,47 @@ impl Bone
 		None
 	}
 
-	pub fn draw(&mut self, spr: &mut Sprite, sl: &SpriteList, layer: u8)
+	pub fn draw(&mut self, sl: &SpriteList, layer: u8) -> Vec<f32>
 	{
+		let mut vertices = vec![];
 		if !self.texture.is_empty() && self.layer == layer
 		{
-			if let Some((r, os)) = sl.get(&self.texture)
+			if let Some((r, os, size)) = sl.get(&self.texture)
 			{
-				spr.getTransformable().setOrigin(*os);
-				spr.setTextureRect(*r);
-				spr.getTransformable().setPosition(self.pos);
-				spr.getTransformable().setRotation(self.parentAngle + self.angle);
-				if self.highlight { spr.setColor((200, 200, 200, 255)); }
-				else { spr.setColor((255, 255, 255, 255)); }
-				spr.draw();
+				let m = Transformable2D::quick(
+					self.pos,
+					self.parentAngle + self.angle,
+					glam::Vec2::ONE,
+					*os
+				);
+				let p1 = m * glam::vec4(
+					0.0, 0.0, 0.0, 1.0
+				);
+				let p2 = m * glam::vec4(
+					size.x, 0.0, 0.0, 1.0
+				);
+				let p3 = m * glam::vec4(
+					size.x, size.y, 0.0, 1.0
+				);
+				let p4 = m * glam::vec4(
+					0.0, size.y, 0.0, 1.0
+				);
+				vertices.append(&mut vec![
+					p1.x, p1.y, r.x, r.y,
+					p2.x, p2.y, (r.x + r.z), r.y,
+					p3.x, p3.y, (r.x + r.z), (r.y + r.w),
+					p4.x, p4.y, r.x, (r.y + r.w)
+				]);
+				// if self.highlight { spr.setColor((200, 200, 200, 255)); }
+				// else { spr.setColor((255, 255, 255, 255)); }
 			}
 			self.highlight = false;
 		}
 		for (_, b) in &mut self.children
 		{
-			b.draw(spr, sl, layer);
+			vertices.append(&mut b.draw(sl, layer));
 		}
-	}
-
-	pub fn drawDebug(&mut self)
-	{
-		Shapes::line(
-			self.pos,
-			self.getEnd(),
-			glam::vec4(1.0, 0.0, 0.0, 1.0),
-			glam::vec4(0.0, 0.0, 1.0, 1.0)
-		);
-		for (_, b) in &mut self.children { b.drawDebug(); }
+		vertices
 	}
 
 	pub fn toJSON(&self) -> json::JsonValue
@@ -185,6 +186,13 @@ impl Bone
 		self.layer = 0;
 		self.scale = 1.0;
 		for (_, b) in &mut self.children { b.reset(); }
+	}
+
+	pub fn childrenCount(&self) -> usize
+	{
+		let mut c = 0;
+		for (_, b) in &self.children { c += b.childrenCount(); }
+		c
 	}
 }
 
@@ -461,30 +469,46 @@ pub struct Skeleton
 {
 	root: Bone,
 	sprites: SpriteList,
-	visible: Sprite,
 	anims: HashMap<String, Animation>,
 	currentAnim: String,
-	pub debug: bool,
+	texture: u32,
+	vbo: u32,
+	vao: u32,
+	ts: Transformable2D,
 	pub activeAnim: bool,
-	pub pos: glam::Vec2,
-	pub scale: f32
 }
 
 impl Skeleton
 {
 	pub fn new() -> Self
 	{
+		let mut vbo = 0;
+		let mut vao = 0;
+		unsafe
+		{
+			gl::GenBuffers(1, &mut vbo);
+			gl::GenVertexArrays(1, &mut vao);
+
+			gl::BindVertexArray(vao);
+			gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+
+			gl::EnableVertexAttribArray(0);
+			gl::VertexAttribPointer(
+				0, 4, gl::FLOAT, gl::FALSE,
+				(4 * size_of::<f32>()) as i32,
+				0 as _
+			);
+		}
 		Self
 		{
 			root: Bone::new(),
 			sprites: HashMap::new(),
-			visible: Sprite::default(),
 			anims: HashMap::new(),
 			currentAnim: String::new(),
-			debug: true,
+			texture: 0,
+			vbo, vao,
+			ts: Transformable2D::new(),
 			activeAnim: true,
-			pos: glam::Vec2::ZERO,
-			scale: 1.0
 		}
 	}
 
@@ -508,6 +532,9 @@ impl Skeleton
 		let raw = std::fs::read_to_string(path);
 		let mut texPath = String::new();
 		if raw.is_err() { return texPath; }
+
+		let mut w = 0;
+		let mut h = 0;
 		if let Ok(root) = json::parse(&raw.unwrap())
 		{
 			self.sprites.clear();
@@ -515,9 +542,9 @@ impl Skeleton
 			{
 				if var == "texture"
 				{
-					texPath = value.as_str().unwrap().to_string();
-					texPath = texPath.replace("\\", "/");
-					self.visible = Sprite::image(texPath.clone());
+					texPath = value.as_str().unwrap().to_string()
+						.replace("\\", "/");
+					(w, h) = self.loadTexture(texPath.clone());
 					println!("Loading texture from {}", value.as_str().unwrap());
 				}
 				if var == "sprites"
@@ -543,12 +570,19 @@ impl Skeleton
 						}
 						self.sprites.insert(
 							id.to_string(),
-							(r, os)
+							(r, os, r.zw().abs())
 						);
 					}
 					println!("Found {} sprites", self.sprites.len());
 				}
 			}
+		}
+		for (_, (r, _, _)) in &mut self.sprites
+		{
+			r.x /= w as f32;
+			r.y /= h as f32;
+			r.z /= w as f32;
+			r.w /= h as f32;
 		}
 		texPath
 	}
@@ -572,15 +606,30 @@ impl Skeleton
 		}
 	}
 
-	pub fn update(&mut self) { self.root.update(self.pos, 0.0); }
+	pub fn update(&mut self) { self.root.update(glam::Vec2::ZERO, 0.0); }
 
 	pub fn getRoot(&mut self) -> &mut Bone { &mut self.root }
 
 	pub fn getSL(&mut self) -> &mut SpriteList { &mut self.sprites }
 
-	pub fn loadTexture(&mut self, path: String)
+	pub fn loadTexture(&mut self, path: String) -> (u32, u32)
 	{
-		self.visible = Sprite::image(path);
+		self.texture = Window::getTexture(path);
+		let mut w = 0;
+		let mut h = 0;
+		unsafe
+		{
+			gl::BindTexture(gl::TEXTURE_2D, self.texture);
+			gl::GetTexLevelParameteriv(
+				gl::TEXTURE_2D, 0,
+				gl::TEXTURE_WIDTH, &mut w
+			);
+			gl::GetTexLevelParameteriv(
+				gl::TEXTURE_2D, 0,
+				gl::TEXTURE_HEIGHT, &mut h
+			);
+		}
+		(w as u32, h as u32)
 	}
 
 	pub fn setAnimation(&mut self, anim: String)
@@ -605,12 +654,7 @@ impl Skeleton
 		&mut self.anims
 	}
 
-	pub fn setScale(&mut self, s: f32)
-	{
-		self.scale = s;
-		self.visible.getTransformable().setScale(glam::vec2(s, s.abs()));
-		self.root.setScale(s);
-	}
+	pub fn getTransformable(&mut self) -> &mut Transformable2D { &mut self.ts }
 }
 
 impl Drawable for Skeleton
@@ -622,9 +666,28 @@ impl Drawable for Skeleton
 			a.update(&mut self.root, self.activeAnim);
 		}
 		
+		let mut vertices = vec![];
 		for i in 0..10
 		{
-			self.root.draw(&mut self.visible, &self.sprites, i);
+			vertices.append(&mut self.root.draw(&self.sprites, i));
+		}
+
+		let s = Window::getCamera()
+			.activateShader("skeleton".to_string());
+
+		s.setMat4("model", self.ts.getMatrix());
+
+		unsafe
+		{
+			gl::BindTexture(gl::TEXTURE_2D, self.texture);
+			Window::getCamera().bindVAO(self.vao);
+			gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
+			gl::BufferData(gl::ARRAY_BUFFER,
+				(vertices.len() * size_of::<f32>()) as isize,
+				vertices.as_ptr() as _,
+				gl::STREAM_DRAW
+			);
+			gl::DrawArrays(gl::QUADS, 0, vertices.len() as i32);
 		}
 		// if self.debug { self.root.drawDebug(); }
 	}
